@@ -37,3 +37,7 @@ node_modules/
 .vscode/
 .DS_Store
 Thumbs.db
+
+# Local assistant context — not for the public repo
+CLAUDE.md
+.claude/
