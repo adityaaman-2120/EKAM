@@ -1,0 +1,23 @@
+{
+  "conn_state": "SF",
+  "duration": 12.34,
+  "history": "ShADadFf",
+  "id.orig_h": "192.0.2.15",
+  "id.orig_p": 51234,
+  "id.resp_h": "203.0.113.9",
+  "id.resp_p": 443,
+  "local_orig": true,
+  "local_resp": false,
+  "missed_bytes": 0,
+  "orig_bytes": 1240,
+  "orig_ip_bytes": 1800,
+  "orig_pkts": 14,
+  "proto": "tcp",
+  "resp_bytes": 3820,
+  "resp_ip_bytes": 4300,
+  "resp_pkts": 12,
+  "service": "ssl",
+  "ts": 1697062455.123456,
+  "tunnel_parents": [],
+  "uid": "CwjjYU2Xg9jZ5J8Zwj"
+}

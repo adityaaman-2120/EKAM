@@ -1,7 +1,7 @@
 """Runtime assembly: the pipeline plus every configured listener, run as one unit.
 
 ``Runtime`` is the object ``ulpf run`` drives. It builds a single
-:class:`~ulpf.core.pipeline.Pipeline` (bronze store + no-op placeholder stages),
+:class:`~ulpf.core.pipeline.Pipeline` (``RawStoreStage`` -> ``ParseStage``),
 points every listener's ``on_event`` at :meth:`Pipeline.submit`, and manages
 orderly startup and shutdown:
 
@@ -26,12 +26,13 @@ import uvicorn
 
 from ulpf.config.settings import Settings
 from ulpf.core.models import RawEvent
-from ulpf.core.pipeline import NoOpStage, Pipeline, RawStoreStage
+from ulpf.core.pipeline import ParseStage, Pipeline, RawStoreStage
 from ulpf.ingest.file_tail import FileTailer
 from ulpf.ingest.http_intake import create_intake_app
 from ulpf.ingest.syslog_tcp import SyslogTcpListener
 from ulpf.ingest.syslog_tls import SyslogTlsListener
 from ulpf.ingest.syslog_udp import SyslogUdpListener
+from ulpf.parse.coordinator import ParseCoordinator
 from ulpf.sinks.raw_store import RawStore
 
 _log = logging.getLogger(__name__)
@@ -56,7 +57,11 @@ class Runtime:
         """Build the pipeline and listener objects (nothing is bound yet)."""
         self._settings = settings
         self._raw_store = RawStore(settings)
-        self._pipeline = Pipeline(settings, [RawStoreStage(self._raw_store), NoOpStage()])
+        self._coordinator = ParseCoordinator()
+        self._pipeline = Pipeline(
+            settings,
+            [RawStoreStage(self._raw_store), ParseStage(settings, self._coordinator)],
+        )
         self._udp = SyslogUdpListener()
         self._tcp = SyslogTcpListener()
         self._tls: SyslogTlsListener | None = None

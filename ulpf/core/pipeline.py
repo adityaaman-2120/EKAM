@@ -18,8 +18,9 @@ Shutdown is graceful: :meth:`Pipeline.stop` waits for the queue to drain, stops
 the workers, then flushes every stage that exposes a ``flush`` method (e.g.
 :class:`RawStoreStage`) so no buffered write is lost.
 
-Only two stages are registered for now: :class:`RawStoreStage` (bronze/evidence
-write) and :class:`NoOpStage` (placeholder for parse/normalize/enrich).
+Stages registered so far: :class:`RawStoreStage` (bronze/evidence write) then
+:class:`ParseStage` (format detection, syslog-envelope stripping, field
+extraction). :class:`NoOpStage` is kept as a placeholder for normalize/enrich.
 """
 
 from __future__ import annotations
@@ -27,13 +28,15 @@ from __future__ import annotations
 import asyncio
 import inspect
 import logging
+from collections import deque
 from typing import Final, Protocol, TypeAlias, runtime_checkable
 
 from ulpf.config.settings import Settings
-from ulpf.core.errors import PipelineStoppedError
-from ulpf.core.metrics import timed
+from ulpf.core.errors import ParseError, PipelineStoppedError
+from ulpf.core.metrics import EVENTS_PARSED, PARSE_SUCCESS_RATE, timed
 from ulpf.core.models import NormalizedEvent, ParsedEvent, RawEvent
 from ulpf.ingest.queue import BoundedEventQueue
+from ulpf.parse.coordinator import ParseCoordinator
 from ulpf.sinks.dlq import DeadLetterQueue
 from ulpf.sinks.raw_store import RawStore
 
@@ -83,6 +86,54 @@ class NoOpStage:
     async def process(self, event: Event) -> Event:
         """Return ``event`` unchanged."""
         return event
+
+
+class ParseStage:
+    """Stage 2: sniff format, strip the syslog envelope, extract fields.
+
+    Wraps :class:`~ulpf.parse.coordinator.ParseCoordinator`. On
+    :class:`~ulpf.core.errors.ParseError` the event is written to the
+    dead-letter queue with ``stage="parse"`` and dropped (``process`` returns
+    ``None``) so the worker continues. Each attempt updates
+    ``ulpf_parse_success_rate``; each success bumps ``ulpf_events_parsed_total``.
+    """
+
+    name = "parse"
+
+    def __init__(
+        self, settings: Settings, coordinator: ParseCoordinator, *, window: int = 1000
+    ) -> None:
+        """Wire the coordinator and a dead-letter queue for parse failures."""
+        self._coordinator = coordinator
+        self._dlq = DeadLetterQueue(settings)
+        self._outcomes: deque[int] = deque(maxlen=window)
+
+    async def process(self, event: Event) -> Event | None:
+        """Return a :class:`ParsedEvent`, or ``None`` after dead-lettering a failure."""
+        assert isinstance(event, RawEvent)
+        try:
+            parsed = self._coordinator.parse(event)
+        except ParseError as exc:
+            self._observe(success=False)
+            self._dlq.write(
+                event,
+                reason=str(exc.detail.get("reason") or "parse_error"),
+                stage=self.name,
+                detail=dict(exc.detail),
+            )
+            _log.warning(
+                "parse failed; event dead-lettered",
+                extra={"event_uid": event.event_uid, "detail": exc.detail},
+            )
+            return None
+        self._observe(success=True)
+        EVENTS_PARSED.labels(source_type=parsed.source_type or "unknown").inc()
+        return parsed
+
+    def _observe(self, *, success: bool) -> None:
+        """Record one parse outcome and refresh ``ulpf_parse_success_rate``."""
+        self._outcomes.append(1 if success else 0)
+        PARSE_SUCCESS_RATE.set(sum(self._outcomes) / len(self._outcomes))
 
 
 class Pipeline:

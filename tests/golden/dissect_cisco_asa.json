@@ -1,0 +1,10 @@
+{
+  "action": "Built",
+  "conn_id": "8145",
+  "direction": "outbound",
+  "dst_endpoint": "inside:192.0.2.15/51234",
+  "nat_dst": "(198.51.100.7/51234)",
+  "nat_src": "(203.0.113.9/443)",
+  "proto": "TCP",
+  "src_endpoint": "outside:203.0.113.9/443"
+}

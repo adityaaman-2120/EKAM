@@ -23,7 +23,8 @@ _N = 1000
 _EV_KEY = 'ulpf_events_received_total{transport="udp"}'
 _BY_KEY = 'ulpf_bytes_received_total{transport="udp"}'
 _RAW_STORE_KEY = 'ulpf_stage_latency_seconds_count{stage="raw_store"}'
-_NOOP_KEY = 'ulpf_stage_latency_seconds_count{stage="noop"}'
+_PARSE_KEY = 'ulpf_stage_latency_seconds_count{stage="parse"}'
+_PARSED_KEY = 'ulpf_events_parsed_total{source_type="unknown"}'
 
 
 def _settings(tmp_path: Path) -> Settings:
@@ -95,7 +96,9 @@ async def test_1000_udp_datagrams_roundtrip_losslessly_to_bronze(tmp_path: Path)
     assert after.get(_EV_KEY, 0.0) - before.get(_EV_KEY, 0.0) == float(_N)
     assert after.get(_BY_KEY, 0.0) - before.get(_BY_KEY, 0.0) == float(total_bytes)
     assert after.get(_RAW_STORE_KEY, 0.0) - before.get(_RAW_STORE_KEY, 0.0) == float(_N)
-    assert after.get(_NOOP_KEY, 0.0) - before.get(_NOOP_KEY, 0.0) == float(_N)
+    assert after.get(_PARSE_KEY, 0.0) - before.get(_PARSE_KEY, 0.0) == float(_N)
+    assert after.get(_PARSED_KEY, 0.0) - before.get(_PARSED_KEY, 0.0) == float(_N)
+    assert after["ulpf_parse_success_rate"] == 1.0
     assert after["ulpf_queue_depth"] == 0.0
     assert runtime.pipeline.dlq.stats()["total"] == 0
 

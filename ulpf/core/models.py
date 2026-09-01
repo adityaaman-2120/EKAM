@@ -86,6 +86,7 @@ class ParsedEvent(RawEvent):
     fields: dict[str, Any] = Field(default_factory=dict)
     envelope: dict[str, Any] = Field(default_factory=dict)
     template_id: str | None = None
+    needs_template_mining: bool = False  # unparsed free text -> Drain3 in Phase 7
 
 
 class NormalizedEvent(BaseModel):

@@ -48,6 +48,10 @@ ulpf = "ulpf.cli.main:app"
 [tool.setuptools.packages.find]
 include = ["ulpf*"]
 
+[tool.setuptools.package-data]
+# Non-Python resources that must ship inside the installed package.
+ulpf = ["parse/patterns/*.grok"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"

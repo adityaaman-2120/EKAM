@@ -1,0 +1,12 @@
+{
+  "CEFVersion": "0",
+  "deviceEventClassId": "100",
+  "deviceProduct": "threatmanager",
+  "deviceVendor": "Security",
+  "deviceVersion": "1.0",
+  "dst": "2.1.2.2",
+  "name": "worm successfully stopped",
+  "severity": "10",
+  "spt": "1232",
+  "src": "10.0.0.1"
+}

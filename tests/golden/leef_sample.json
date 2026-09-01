@@ -1,0 +1,12 @@
+{
+  "cat": "Recon",
+  "dst": "203.0.113.9",
+  "dstPort": "443",
+  "eventId": "41",
+  "leefVersion": "1.0",
+  "product": "StealthWatch",
+  "productVersion": "1.0",
+  "src": "192.0.2.1",
+  "srcPort": "3097",
+  "vendor": "Lancope"
+}
