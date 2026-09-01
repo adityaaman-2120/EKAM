@@ -1,0 +1,21 @@
+# Local development override.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+#
+# Starts ClickHouse ONLY. minio and redpanda are pushed behind the "full"
+# compose profile here, so a plain `up` with this override skips them. Bring
+# them in explicitly with `--profile full` if you need the whole stack.
+
+name: ulpf
+
+services:
+  clickhouse:
+    # Keep dev data local to the repo so it is easy to inspect and wipe.
+    volumes:
+      - ./data/runtime/clickhouse:/var/lib/clickhouse
+
+  minio:
+    profiles: ["full"]
+
+  redpanda:
+    profiles: ["full"]

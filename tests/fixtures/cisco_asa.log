@@ -1,0 +1,10 @@
+Oct 11 22:14:15 fw01 %ASA-6-302013: Built outbound TCP connection 8145 for outside:203.0.113.9/443 (203.0.113.9/443) to inside:192.0.2.15/51234 (198.51.100.7/51234)
+Oct 11 22:14:16 fw01 %ASA-4-106023: Deny tcp src outside:203.0.113.55/40001 dst inside:192.0.2.20/22 by access-group "outside_access_in" [0x0, 0x0]
+Oct 11 22:14:17 fw01 %ASA-6-302016: Teardown UDP connection 8146 for outside:203.0.113.53/53 to inside:192.0.2.15/40155 duration 0:00:02 bytes 210
+Oct 11 22:14:19 fw01 %ASA-6-305011: Built dynamic TCP translation from inside:192.0.2.15/51235 to outside:198.51.100.7/51235
+Oct 11 22:14:20 fw01 %ASA-6-106015: Deny TCP (no connection) from 203.0.113.77/443 to 192.0.2.15/51236 flags SYN ACK on interface outside
+Oct 11 22:14:22 fw01 %ASA-5-111008: User 'admin' executed the 'configure terminal' command.
+Oct 11 22:14:24 fw01 %ASA-4-733100: [ Scanning] drop rate-1 exceeded. Current burst rate is 12 per second, max configured rate is 10 per second
+Oct 11 22:14:25 fw01 %ASA-6-302020: Built inbound ICMP connection 8150 for faddr 203.0.113.40/0 gaddr 198.51.100.7/0 laddr 192.0.2.15/0
+Oct 11 22:14:27 fw01 %ASA-6-113004: AAA user authentication Successful : server = 192.0.2.5 : user = jdoe
+Oct 11 22:14:29 fw01 %ASA-2-106001: Inbound TCP connection denied from 203.0.113.200/31337 to 192.0.2.30/23 flags SYN on interface outside
