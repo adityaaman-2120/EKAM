@@ -47,3 +47,5 @@ deploy/certs/*.crt
 deploy/certs/*.key
 deploy/certs/*.csr
 deploy/certs/*.srl
+
+check_parse.py

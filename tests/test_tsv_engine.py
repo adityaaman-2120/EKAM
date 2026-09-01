@@ -119,6 +119,16 @@ def test_types_line_marks_vector_columns() -> None:
     assert engine.parse("7\talpha,beta", {"stream": "x"}) == {"id": "7", "tags": ["alpha", "beta"]}
 
 
+def test_fields_and_types_column_count_mismatch_raises() -> None:
+    # A malformed Zeek log whose #fields and #types lines disagree on column
+    # count must fail loudly rather than silently truncate to the shorter list.
+    engine = TsvEngine()
+    engine.parse("#fields\tid\ttags\textra", {"stream": "bad"})
+    with pytest.raises(ParseError) as excinfo:
+        engine.parse("#types\tcount\tvector[string]", {"stream": "bad"})
+    assert excinfo.value.detail == {"fields": 3, "types": 2}
+
+
 def test_streams_are_isolated_by_key() -> None:
     engine = TsvEngine()
     engine.parse("#fields\ta\tb", {"stream": "s1"})

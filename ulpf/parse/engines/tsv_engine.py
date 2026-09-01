@@ -129,9 +129,17 @@ def _reconcile_list_cols(stream: _Stream) -> None:
     """Recompute which columns are set/vector types from ``#fields`` + ``#types``."""
     if not stream.columns or not stream.type_tokens:
         return
+    if len(stream.columns) != len(stream.type_tokens):
+        raise ParseError(
+            "Zeek #fields and #types column counts differ",
+            detail={
+                "fields": len(stream.columns),
+                "types": len(stream.type_tokens),
+            },
+        )
     stream.list_cols = {
         name
-        for name, type_token in zip(stream.columns, stream.type_tokens)
+        for name, type_token in zip(stream.columns, stream.type_tokens, strict=True)
         if type_token.startswith(_LIST_TYPE_PREFIXES)
     }
 

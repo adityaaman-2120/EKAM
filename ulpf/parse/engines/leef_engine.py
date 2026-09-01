@@ -51,7 +51,10 @@ def _parse_v1(rest: str) -> dict[str, str]:
     parts = _split_header_pipes(rest, maxsplit=5)
     if len(parts) < 5:
         raise ParseError("LEEF 1.0 header is incomplete", detail={"found": len(parts)})
-    fields = {key: _unescape_header(value) for key, value in zip(_HEADER_KEYS, parts[:5])}
+    fields = {
+        key: _unescape_header(value)
+        for key, value in zip(_HEADER_KEYS, parts[:5], strict=True)
+    }
     fields.update(_parse_attributes(parts[5] if len(parts) > 5 else "", "\t"))
     return fields
 
@@ -61,7 +64,10 @@ def _parse_v2(rest: str) -> dict[str, str]:
     parts = _split_header_pipes(rest, maxsplit=6)
     if len(parts) < 6:
         raise ParseError("LEEF 2.0 header is incomplete", detail={"found": len(parts)})
-    fields = {key: _unescape_header(value) for key, value in zip(_HEADER_KEYS, parts[:5])}
+    fields = {
+        key: _unescape_header(value)
+        for key, value in zip(_HEADER_KEYS, parts[:5], strict=True)
+    }
     delimiter_raw = _unescape_header(parts[5])
     fields["delimiter"] = delimiter_raw
     fields.update(

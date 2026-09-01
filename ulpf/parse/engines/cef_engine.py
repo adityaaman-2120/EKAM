@@ -58,10 +58,14 @@ class CefEngine:
             raise ParseError("no 'CEF:' marker found in line")
         segments = _split_unescaped_pipes(text[marker + 4 :], maxsplit=7)
         if len(segments) < 7:
-            raise ParseError("CEF header has fewer than 7 fields", detail={"found": len(segments)})
+            raise ParseError(
+                "CEF header is incomplete",
+                detail={"found": len(segments), "expected": 7},
+            )
 
         fields: dict[str, str] = {
-            key: _unescape_header(value) for key, value in zip(_HEADER_KEYS, segments[:7])
+            key: _unescape_header(value)
+            for key, value in zip(_HEADER_KEYS, segments[:7], strict=True)
         }
         if len(segments) > 7:
             fields.update(_parse_extension(segments[7]))

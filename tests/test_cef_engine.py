@@ -123,6 +123,14 @@ def test_truncated_header_raises() -> None:
         _parse("CEF:0|Vendor|Product")
 
 
+def test_header_with_five_segments_raises_and_does_not_parse_partially() -> None:
+    # Only 5 header segments (version + 4). Must fail loudly, not return a
+    # partial field dict — silent mis-parsing is what the DLQ exists to prevent.
+    with pytest.raises(ParseError) as excinfo:
+        _parse("CEF:0|Security|NGFW|1.0|100")
+    assert excinfo.value.detail == {"found": 5, "expected": 7}
+
+
 def test_syslog_prefixed_cef_is_located() -> None:
     line = "<134>Sep 19 08:26:10 fw01 CEF:0|V|P|1.0|1|n|5|src=192.0.2.1"
     result = _parse(line)

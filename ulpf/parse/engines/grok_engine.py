@@ -75,11 +75,15 @@ def lint_pattern(pattern: str) -> list[str]:
     """
     warnings: list[str] = []
     for match in _NESTED_QUANTIFIER_RE.finditer(pattern):
-        warnings.append(f"nested quantifier near {match.group(0)!r} risks catastrophic backtracking")
+        warnings.append(
+            f"nested quantifier near {match.group(0)!r} risks catastrophic backtracking"
+        )
     for match in _QUANTIFIED_REF_RE.finditer(pattern):
         warnings.append(f"quantified grok reference {match.group(0)!r} risks runaway matching")
     if pattern.startswith(_LEADING_GREEDY):
-        warnings.append("pattern starts with an unanchored greedy match; anchor with ^ or a literal")
+        warnings.append(
+            "pattern starts with an unanchored greedy match; anchor with ^ or a literal"
+        )
     return warnings
 
 
@@ -102,7 +106,9 @@ class _Compiler:
     def compile(self, grok: str, depth: int = 0) -> str:
         """Recursively expand ``grok`` into plain regex source."""
         if depth > _MAX_NESTING_DEPTH:
-            raise ParseError("grok pattern nesting exceeded", detail={"max_depth": _MAX_NESTING_DEPTH})
+            raise ParseError(
+                "grok pattern nesting exceeded", detail={"max_depth": _MAX_NESTING_DEPTH}
+            )
         out: list[str] = []
         i = 0
         while True:
@@ -165,11 +171,16 @@ class GrokEngine:
         except TimeoutError as exc:
             raise ParseError(
                 "grok match timed out",
-                detail={"reason": "grok_timeout", "timeout_ms": timeout_ms, "pattern": grok_pattern},
+                detail={
+                    "reason": "grok_timeout",
+                    "timeout_ms": timeout_ms,
+                    "pattern": grok_pattern,
+                },
             ) from exc
         if match is None:
             raise ParseError(
-                "grok pattern did not match", detail={"reason": "grok_no_match", "pattern": grok_pattern}
+                "grok pattern did not match",
+                detail={"reason": "grok_no_match", "pattern": grok_pattern},
             )
         return {
             compiled.group_to_field[group]: value

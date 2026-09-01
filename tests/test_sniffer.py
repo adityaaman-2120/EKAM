@@ -6,6 +6,10 @@ import pytest
 
 from ulpf.detect.sniffer import Sniffer, sniff, sniff_layered
 
+_SYSLOG_WRAPPED_CEF = (
+    "<134>Sep 19 08:26:10 fw01 "
+    "CEF:0|Security|NGFW|1.0|100|deny|5|src=192.0.2.1 dst=203.0.113.9"
+)
 
 # --------------------------------------------------------------------------
 # sniff() — one case per branch
@@ -68,8 +72,7 @@ def test_layered_non_syslog_repeats_outer() -> None:
 
 
 def test_layered_syslog_wrapping_cef() -> None:
-    line = "<134>Sep 19 08:26:10 fw01 CEF:0|Security|NGFW|1.0|100|deny|5|src=192.0.2.1 dst=203.0.113.9"
-    assert sniff_layered(line) == ("syslog", "cef")
+    assert sniff_layered(_SYSLOG_WRAPPED_CEF) == ("syslog", "cef")
 
 
 def test_layered_syslog_wrapping_json_rfc5424() -> None:

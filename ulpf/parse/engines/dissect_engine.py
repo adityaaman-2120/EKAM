@@ -79,9 +79,12 @@ def compile_pattern(pattern: str) -> CompiledPattern:
                 "adjacent dissect placeholders need a delimiter between them",
                 detail={"pattern": pattern, "after_field": index},
             )
+    # The compile loop above appends to ``specs`` and ``delims`` in lockstep,
+    # so they are always the same length; ``strict=True`` makes that invariant
+    # fail loudly if the loop is ever changed to break the pairing.
     fields = tuple(
         _Field(name=name, op=op, delim=delim, right_pad=right_pad)
-        for (name, op, right_pad), delim in zip(specs, delims)
+        for (name, op, right_pad), delim in zip(specs, delims, strict=True)
     )
     return CompiledPattern(prefix=prefix, fields=fields)
 

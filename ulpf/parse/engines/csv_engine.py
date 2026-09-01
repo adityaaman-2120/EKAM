@@ -41,7 +41,9 @@ class CsvEngine:
         quotechar = options.get("quotechar", '"')
         skip_empty = bool(options.get("skip_empty", True))
         if len(delimiter) != 1:
-            raise ParseError("delimiter must be a single character", detail={"delimiter": delimiter})
+            raise ParseError(
+                "delimiter must be a single character", detail={"delimiter": delimiter}
+            )
 
         row = _read_row(text, delimiter, quotechar)
         return _map_row(row, [str(name) for name in columns], skip_empty)
