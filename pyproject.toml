@@ -1,0 +1,64 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ulpf"
+version = "0.1.0"
+description = "Universal Log Pre-processing Framework — perimeter network log ingest, normalization to OCSF, and ML-ready analytics."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Proprietary" }
+
+dependencies = [
+    "pydantic>=2.5",
+    "pydantic-settings",
+    "fastapi",
+    "uvicorn[standard]",
+    "pyyaml",
+    "python-dateutil",
+    "regex",
+    "orjson",
+    "pyarrow",
+    "duckdb",
+    "drain3",
+    "watchdog",
+    "cryptography",
+    "uuid6",
+    "typer",
+    "rich",
+    "prometheus-client",
+    "aiofiles",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "pytest-cov",
+    "hypothesis",
+    "ruff",
+    "mypy",
+]
+
+[project.scripts]
+ulpf = "ulpf.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["ulpf*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.mypy]
+python_version = "3.11"
+strict = true

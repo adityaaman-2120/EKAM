@@ -1,2 +1,39 @@
 # ULPF global configuration.
-# Placeholder — populated in a later step. Do not add logic here yet.
+# Every value here can be overridden by an environment variable prefixed with
+# ULPF_ , using __ as the section delimiter, e.g. ULPF_INGEST__SYSLOG_UDP_PORT=1514
+
+ingest:
+  syslog_udp_port: 514
+  syslog_tcp_port: 514
+  syslog_tls_port: 6514
+  http_port: 8081
+  queue_max_size: 100000
+
+storage:
+  bronze_path: data/runtime/bronze
+  silver_path: data/runtime/silver
+  dlq_path: data/runtime/dlq
+  ledger_path: data/runtime/ledger
+
+parse:
+  sources_dir: configs/sources
+  hot_reload: true
+  grok_timeout_ms: 100
+
+integrity:
+  enabled: true
+  batch_size: 1000
+  batch_timeout_seconds: 10
+
+enrich:
+  geoip_db_path: null
+  ioc_path: null
+  enabled: true
+
+pipeline:
+  worker_count: 4
+  batch_size: 500
+
+api:
+  host: 0.0.0.0
+  port: 8080
