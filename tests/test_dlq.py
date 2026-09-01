@@ -13,7 +13,7 @@ from ulpf.integrity.hashing import make_raw_event
 from ulpf.sinks.dlq import DeadLetterQueue
 
 _DAY_NS = 86_400 * 1_000_000_000
-_BASE_NS = int(dt.datetime(2023, 10, 11, tzinfo=dt.timezone.utc).timestamp()) * 1_000_000_000
+_BASE_NS = int(dt.datetime(2023, 10, 11, tzinfo=dt.UTC).timestamp()) * 1_000_000_000
 
 
 class _Clock:

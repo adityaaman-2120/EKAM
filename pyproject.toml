@@ -7,7 +7,7 @@ name = "ulpf"
 version = "0.1.0"
 description = "Universal Log Pre-processing Framework — perimeter network log ingest, normalization to OCSF, and ML-ready analytics."
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.12"
 license = { text = "Proprietary" }
 
 dependencies = [

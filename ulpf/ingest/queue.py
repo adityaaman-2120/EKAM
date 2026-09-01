@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
-from enum import Enum
+from enum import StrEnum
 from typing import Any, Literal
 
 from ulpf.config.settings import Settings
@@ -37,7 +37,7 @@ DropPolicy = Literal["block", "dlq"]
 DlqHandler = Callable[[Any], Awaitable[None]]
 
 
-class PutOutcome(str, Enum):
+class PutOutcome(StrEnum):
     """Result of :meth:`BoundedEventQueue.put_with_backpressure`."""
 
     ENQUEUED = "enqueued"

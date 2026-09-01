@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
+import sys
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
 
@@ -21,6 +23,22 @@ from ulpf import __version__ as _FALLBACK_VERSION
 from ulpf.config.settings import Settings, get_settings
 from ulpf.core.logging import configure_logging
 from ulpf.core.runtime import Runtime
+
+# ULPF is pinned to a single interpreter series so dev and deployment cannot drift.
+_EXPECTED_PYTHON: tuple[int, int] = (3, 11)
+
+
+def _check_python_version() -> None:
+    """Warn (do not fail) when the running interpreter is not the pinned 3.11 series."""
+    running = sys.version_info[:2]
+    if running != _EXPECTED_PYTHON:
+        logging.getLogger("ulpf.cli").warning(
+            "running on Python %d.%d; ULPF is pinned to Python %d.%d",
+            running[0],
+            running[1],
+            _EXPECTED_PYTHON[0],
+            _EXPECTED_PYTHON[1],
+        )
 
 app = typer.Typer(
     help="ULPF — Universal Log Pre-processing Framework.", no_args_is_help=True
@@ -48,6 +66,7 @@ def run() -> None:
     """Start all configured listeners and the processing pipeline."""
     settings = get_settings()
     configure_logging("INFO")
+    _check_python_version()
     try:
         asyncio.run(_serve(settings))
     except KeyboardInterrupt:  # pragma: no cover - interactive Ctrl-C

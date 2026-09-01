@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 # LogRecord attributes that are framework internals, not caller-supplied extras.
 _RESERVED: frozenset[str] = frozenset(
@@ -30,7 +30,7 @@ class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         """Serialize ``record`` to a compact JSON string."""
         payload: dict[str, object] = {
-            "ts": datetime.fromtimestamp(record.created, timezone.utc).isoformat(),
+            "ts": datetime.fromtimestamp(record.created, UTC).isoformat(),
             "level": record.levelname,
             "logger": record.name,
             "message": record.getMessage(),

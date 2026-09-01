@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import hashlib
 
+import pytest
+
 from ulpf.core.models import RawEvent
 from ulpf.ingest.syslog_tcp import SyslogTcpListener, read_frames
 
@@ -129,7 +131,7 @@ async def test_listener_end_to_end_mixed_framing() -> None:
         await listener.stop()
 
     assert [e.raw for e in got] == [o1, n2, o3]
-    for event, raw in zip(got, [o1, n2, o3]):
+    for event, raw in zip(got, [o1, n2, o3], strict=True):
         assert event.raw_hash == hashlib.sha256(raw).hexdigest()
         assert event.raw_len == len(raw)
         assert event.transport == "tcp"
@@ -139,9 +141,5 @@ async def test_listener_end_to_end_mixed_framing() -> None:
 
 async def test_sockname_raises_before_start() -> None:
     listener = SyslogTcpListener()
-    try:
-        listener.sockname
-    except RuntimeError:
-        pass
-    else:  # pragma: no cover
-        raise AssertionError("expected RuntimeError before start()")
+    with pytest.raises(RuntimeError):
+        _ = listener.sockname

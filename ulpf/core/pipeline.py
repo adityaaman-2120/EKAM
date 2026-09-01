@@ -30,7 +30,7 @@ import logging
 from typing import Final, Protocol, TypeAlias, runtime_checkable
 
 from ulpf.config.settings import Settings
-from ulpf.core.errors import IngestError
+from ulpf.core.errors import PipelineStoppedError
 from ulpf.core.metrics import timed
 from ulpf.core.models import NormalizedEvent, ParsedEvent, RawEvent
 from ulpf.ingest.queue import BoundedEventQueue
@@ -108,7 +108,7 @@ class Pipeline:
     async def submit(self, event: Event) -> None:
         """Enqueue an event for processing, applying backpressure when full."""
         if self._stopped:
-            raise IngestError("pipeline is shutting down")
+            raise PipelineStoppedError("pipeline is shutting down")
         await self.queue.put_with_backpressure(event)
 
     async def stop(self) -> None:

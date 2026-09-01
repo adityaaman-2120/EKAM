@@ -7,7 +7,7 @@ the single place raw timestamp strings/numbers are turned into that form.
 from __future__ import annotations
 
 import re
-from datetime import datetime, timezone, tzinfo
+from datetime import UTC, datetime, tzinfo
 from decimal import ROUND_HALF_EVEN, Decimal
 
 from dateutil.parser import isoparse
@@ -16,7 +16,7 @@ from dateutil.tz import gettz
 
 from ulpf.core.errors import ParseError
 
-_UNIX_EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
+_UNIX_EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 _NUMERIC_RE = re.compile(r"^-?\d+(\.\d+)?$")
 _RFC3164_RE = re.compile(r"^[A-Za-z]{3} \d{1,2} \d{2}:\d{2}:\d{2}$")
 _RFC3164_FMT = "%b %d %H:%M:%S"
@@ -33,8 +33,8 @@ def to_utc_ns(dt: datetime) -> int:
     A naive ``datetime`` is assumed to already be UTC.
     """
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    delta = dt.astimezone(timezone.utc) - _UNIX_EPOCH
+        dt = dt.replace(tzinfo=UTC)
+    delta = dt.astimezone(UTC) - _UNIX_EPOCH
     return (delta.days * 86_400 + delta.seconds) * 1_000_000_000 + delta.microseconds * 1_000
 
 
@@ -70,7 +70,7 @@ def parse_timestamp(
 def _resolve_tz(tz: str | tzinfo | None) -> tzinfo:
     """Return a ``tzinfo`` for ``tz`` (name or object), defaulting to UTC."""
     if tz is None:
-        return timezone.utc
+        return UTC
     if isinstance(tz, tzinfo):
         return tz
     zone = gettz(tz)
@@ -101,14 +101,14 @@ def _try_rfc3164(text: str, reference_year: int | None, zone: tzinfo) -> datetim
     """Parse yearless RFC 3164 time, resolving the year; ``None`` if no match."""
     if not _RFC3164_RE.match(text):
         return None
-    year = reference_year if reference_year is not None else datetime.now(timezone.utc).year
+    year = reference_year if reference_year is not None else datetime.now(UTC).year
     candidate = _rfc3164_with_year(text, year, zone)
     if candidate is None:  # e.g. "Feb 29" and `year` is not a leap year.
         return _rfc3164_with_year(text, year - 1, zone)
     # Year-boundary bug fix: a line like "Dec 31 23:59:59" processed on Jan 1
     # would be stamped ~1 year in the future if we blindly assume the current
     # year. If the guess lands ahead of now, the event is from the prior year.
-    if candidate.astimezone(timezone.utc) > datetime.now(timezone.utc):
+    if candidate.astimezone(UTC) > datetime.now(UTC):
         prior = _rfc3164_with_year(text, year - 1, zone)
         return prior if prior is not None else candidate
     return candidate

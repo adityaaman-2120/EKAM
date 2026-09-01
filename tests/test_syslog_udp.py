@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import hashlib
 
+import pytest
+
 from ulpf.core.metrics import snapshot
 from ulpf.core.models import RawEvent
 from ulpf.ingest.syslog_udp import SyslogUdpListener
@@ -65,9 +67,5 @@ async def test_three_datagrams_become_three_raw_events() -> None:
 
 async def test_sockname_raises_before_start() -> None:
     listener = SyslogUdpListener()
-    try:
-        listener.sockname
-    except RuntimeError:
-        pass
-    else:  # pragma: no cover
-        raise AssertionError("expected RuntimeError before start()")
+    with pytest.raises(RuntimeError):
+        _ = listener.sockname

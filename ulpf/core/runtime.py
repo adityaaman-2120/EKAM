@@ -153,7 +153,9 @@ class Runtime:
             await self.stop()
 
     @staticmethod
-    def _install_signal_handlers(loop: asyncio.AbstractEventLoop, stop_event: asyncio.Event) -> None:
+    def _install_signal_handlers(
+        loop: asyncio.AbstractEventLoop, stop_event: asyncio.Event
+    ) -> None:
         """Wire SIGINT/SIGTERM to ``stop_event`` on any platform.
 
         ``loop.add_signal_handler`` is Unix-only; on Windows fall back to

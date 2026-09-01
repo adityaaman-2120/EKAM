@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from ulpf.config.settings import IngestSettings, PipelineSettings, Settings, StorageSettings
+from ulpf.core.errors import PipelineStoppedError
 from ulpf.core.metrics import snapshot
 from ulpf.core.models import RawEvent
 from ulpf.core.pipeline import NoOpStage, Pipeline, RawStoreStage
@@ -161,7 +162,7 @@ async def test_submit_after_stop_raises(tmp_path: Path) -> None:
     pipeline = Pipeline(_settings(tmp_path), [NoOpStage()])
     pipeline.start()
     await pipeline.stop()
-    with pytest.raises(Exception):
+    with pytest.raises(PipelineStoppedError):
         await pipeline.submit(_raw(0))
 
 

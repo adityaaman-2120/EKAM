@@ -10,6 +10,13 @@ queryable and ML-ready — deployable in an air-gapped container.
 See [CLAUDE.md](CLAUDE.md) for full project context, requirements, tech stack,
 and engineering rules.
 
+## Prerequisites
+
+- **Python 3.11 exactly** (`>=3.11,<3.12`). The version is pinned via
+  `pyproject.toml`, a repo-root `.python-version` file, and CI so local dev and
+  air-gapped deployment cannot drift apart. `ulpf run` logs a warning if the
+  running interpreter is not 3.11.
+
 ## Layout
 
 ```

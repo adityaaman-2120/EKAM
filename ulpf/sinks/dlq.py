@@ -143,7 +143,7 @@ class DeadLetterQueue:
     def _date_of(ts_ns: int) -> str:
         """UTC ``YYYY-MM-DD`` for an epoch-nanoseconds timestamp."""
         seconds = ts_ns // 1_000_000_000
-        return dt.datetime.fromtimestamp(seconds, dt.timezone.utc).strftime("%Y-%m-%d")
+        return dt.datetime.fromtimestamp(seconds, dt.UTC).strftime("%Y-%m-%d")
 
     @staticmethod
     def _open(path: Path, mode: str) -> IO[str]:

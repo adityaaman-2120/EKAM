@@ -32,7 +32,7 @@ def _dev_certs(target: Path) -> dict[str, Path]:
     from cryptography.hazmat.primitives.asymmetric import rsa
     from cryptography.x509.oid import NameOID
 
-    now = dt.datetime.now(dt.timezone.utc)
+    now = dt.datetime.now(dt.UTC)
 
     def _rsa() -> rsa.RSAPrivateKey:
         return rsa.generate_private_key(public_exponent=65537, key_size=2048)

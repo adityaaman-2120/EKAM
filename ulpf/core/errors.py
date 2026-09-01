@@ -31,6 +31,10 @@ class IngestError(UlpfError):
     """A listener or intake stage failed to accept an event."""
 
 
+class PipelineStoppedError(UlpfError):
+    """An event was submitted to a pipeline that has already been stopped."""
+
+
 class SniffError(UlpfError):
     """Format detection could not classify a raw event."""
 

@@ -58,8 +58,8 @@ def test_write_100_read_back_and_verify(tmp_path: Path) -> None:
 
 def test_partitioned_by_utc_ingest_date(tmp_path: Path) -> None:
     store = _store(tmp_path)
-    d1 = int(dt.datetime(2023, 10, 11, 12, tzinfo=dt.timezone.utc).timestamp()) * 10**9
-    d2 = int(dt.datetime(2023, 10, 12, 1, tzinfo=dt.timezone.utc).timestamp()) * 10**9
+    d1 = int(dt.datetime(2023, 10, 11, 12, tzinfo=dt.UTC).timestamp()) * 10**9
+    d2 = int(dt.datetime(2023, 10, 12, 1, tzinfo=dt.UTC).timestamp()) * 10**9
     a = RawEvent.from_raw(b"aaa", source_id="s", transport="tcp", ingest_time_ns=d1)
     b = RawEvent.from_raw(b"bbb", source_id="s", transport="tcp", ingest_time_ns=d2)
     store.write(a)
