@@ -7,13 +7,23 @@ ingest:
   syslog_tcp_port: 514
   syslog_tls_port: 6514
   http_port: 8081
+  http_max_body_bytes: 8388608
   queue_max_size: 100000
+  file_tail_paths: []
 
 storage:
   bronze_path: data/runtime/bronze
   silver_path: data/runtime/silver
   dlq_path: data/runtime/dlq
   ledger_path: data/runtime/ledger
+  state_path: data/runtime/state
+
+tls:
+  cert_path: null
+  key_path: null
+  client_ca_path: null
+  require_client_cert: false
+  minimum_version: TLSv1_2
 
 parse:
   sources_dir: configs/sources

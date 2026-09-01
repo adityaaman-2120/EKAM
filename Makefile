@@ -18,7 +18,7 @@ typecheck:
 	mypy ulpf
 
 run:
-	uvicorn ulpf.api:app --host 0.0.0.0 --port 8000 --reload
+	python -m ulpf.cli.main run
 
 clean:
 	rm -rf build dist *.egg-info .pytest_cache .ruff_cache .mypy_cache htmlcov .coverage coverage.xml

@@ -37,12 +37,13 @@ dev = [
     "pytest-asyncio",
     "pytest-cov",
     "hypothesis",
+    "httpx",
     "ruff",
     "mypy",
 ]
 
 [project.scripts]
-ulpf = "ulpf.cli:main"
+ulpf = "ulpf.cli.main:app"
 
 [tool.setuptools.packages.find]
 include = ["ulpf*"]

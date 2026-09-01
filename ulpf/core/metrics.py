@@ -39,6 +39,10 @@ DEAD_LETTER = Counter(
     "Events routed to the dead-letter queue.",
     ["stage", "reason"],
 )
+QUEUE_BACKPRESSURE_WAITS = Counter(
+    "ulpf_queue_backpressure_waits_total",
+    "Times a producer had to wait for intake-queue space (backpressure applied).",
+)
 
 QUEUE_DEPTH = Gauge(
     "ulpf_queue_depth",
@@ -69,6 +73,7 @@ _ALL_METRICS = (
     EVENTS_PARSED,
     EVENTS_NORMALIZED,
     DEAD_LETTER,
+    QUEUE_BACKPRESSURE_WAITS,
     QUEUE_DEPTH,
     ACTIVE_SOURCES,
     PARSE_SUCCESS_RATE,

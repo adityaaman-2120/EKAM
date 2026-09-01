@@ -30,7 +30,9 @@ class IngestSettings(BaseModel):
     syslog_tcp_port: int = 514
     syslog_tls_port: int = 6514
     http_port: int = 8081
+    http_max_body_bytes: int = 8 * 1024 * 1024
     queue_max_size: int = 100_000
+    file_tail_paths: list[str] = Field(default_factory=list)
 
 
 class StorageSettings(BaseModel):
@@ -40,6 +42,7 @@ class StorageSettings(BaseModel):
     silver_path: Path = _RUNTIME_DIR / "silver"
     dlq_path: Path = _RUNTIME_DIR / "dlq"
     ledger_path: Path = _RUNTIME_DIR / "ledger"
+    state_path: Path = _RUNTIME_DIR / "state"
 
 
 class ParseSettings(BaseModel):
@@ -73,6 +76,16 @@ class PipelineSettings(BaseModel):
     batch_size: int = 500
 
 
+class TlsSettings(BaseModel):
+    """TLS material for the RFC 5425 syslog-over-TLS listener (port 6514)."""
+
+    cert_path: Path | None = None
+    key_path: Path | None = None
+    client_ca_path: Path | None = None
+    require_client_cert: bool = False
+    minimum_version: str = "TLSv1_2"
+
+
 class ApiSettings(BaseModel):
     """FastAPI bind address."""
 
@@ -91,6 +104,7 @@ class Settings(BaseSettings):
     )
 
     ingest: IngestSettings = Field(default_factory=IngestSettings)
+    tls: TlsSettings = Field(default_factory=TlsSettings)
     storage: StorageSettings = Field(default_factory=StorageSettings)
     parse: ParseSettings = Field(default_factory=ParseSettings)
     integrity: IntegritySettings = Field(default_factory=IntegritySettings)

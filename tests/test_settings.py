@@ -24,13 +24,19 @@ def test_defaults_load_from_yaml() -> None:
     assert settings.ingest.syslog_udp_port == 514
     assert settings.ingest.syslog_tls_port == 6514
     assert settings.ingest.queue_max_size == 100_000
+    assert settings.ingest.http_max_body_bytes == 8_388_608
+    assert settings.ingest.file_tail_paths == []
     assert settings.storage.bronze_path == Path("data/runtime/bronze")
     assert settings.storage.ledger_path == Path("data/runtime/ledger")
+    assert settings.storage.state_path == Path("data/runtime/state")
     assert settings.parse.sources_dir == Path("configs/sources")
     assert settings.parse.hot_reload is True
     assert settings.parse.grok_timeout_ms == 100
     assert settings.integrity.enabled is True
     assert settings.integrity.batch_size == 1000
+    assert settings.tls.cert_path is None
+    assert settings.tls.require_client_cert is False
+    assert settings.tls.minimum_version == "TLSv1_2"
     assert settings.enrich.geoip_db_path is None
     assert settings.enrich.ioc_path is None
     assert settings.pipeline.worker_count == 4
