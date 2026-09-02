@@ -1,0 +1,72 @@
+# Zeek dns.log (JSON mode) -> OCSF DNS Activity (4003).
+#
+# A Zeek dns.log record is the whole transaction (query fields + response fields
+# when answered), so it maps to activity_id 2 (Response). `answers` / `TTLs` are
+# arrays; OCSF `answers` wants an array of `dns_answer` OBJECTS which the scalar
+# field mapper cannot synthesise, so the flattened `answers.0`, `TTLs.0`, ...
+# are kept verbatim in `unmapped` (the raw record is in bronze too).
+#
+# Detect: distinguished from conn.log / http.log by the presence of "query".
+
+name: zeek_dns
+version: "1.0.0"
+vendor: "The Zeek Project"
+product: Zeek
+product_version: "6.x"
+priority: 15
+
+detect:
+  all:
+    - contains: '"uid"'
+    - contains: '"query"'
+
+parse:
+  envelope: none
+  engine: json
+  options: {}
+
+normalize:
+  class_uid: 4003
+  category_uid: 4
+  activity_id: 2               # DNS Activity: Response
+  constants:
+    metadata.product.vendor_name: "The Zeek Project"
+    metadata.product.name: Zeek
+    severity_id: 1
+    status_id: 1
+  fields:
+    src_endpoint.ip: {from: id.orig_h, type: ip, required: true}
+    src_endpoint.port: {from: id.orig_p, type: int}
+    dst_endpoint.ip: {from: id.resp_h, type: ip, required: true}
+    dst_endpoint.port: {from: id.resp_p, type: int}
+
+    query.hostname: {from: query, type: str, required: true}
+    query.type: {from: qtype_name, type: str}
+    query.class:
+      from: qclass_name
+      map: {C_INTERNET: IN, C_CHAOS: CH, C_HS: HS, C_NONE: NONE, C_ANY: ANY}
+      default: null
+
+    rcode_id: {from: rcode, type: int}
+    rcode:
+      from: rcode_name
+      map: {NOERROR: NoError, FORMERR: FormError, SERVFAIL: ServError, NXDOMAIN: NXDomain, NOTIMP: NotImp, REFUSED: Refused}
+      default: null
+
+    connection_info.uid: {from: uid, type: str}
+    connection_info.protocol_num:
+      from: proto
+      map: {tcp: 6, udp: 17}
+      default: 0
+    connection_info.protocol_name:
+      from: proto
+      map: {tcp: tcp, udp: udp}
+      default: null
+
+    time: {from: ts, type: timestamp, required: true}
+
+  unmapped: keep_all           # answers.*, TTLs.*, trans_id, rtt, AA/TC/RD/RA, ...
+
+validate:
+  required: [query, src_endpoint.ip, time, class_uid, category_uid]
+  on_failure: dead_letter

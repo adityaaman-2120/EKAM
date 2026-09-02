@@ -1,0 +1,56 @@
+{
+  "action": "Allowed",
+  "action_id": 1,
+  "activity_id": 6,
+  "app_name": "ssl",
+  "category_name": "Network Activity",
+  "category_uid": 4,
+  "class_name": "Network Activity",
+  "class_uid": 4001,
+  "connection_info": {
+    "protocol_name": "tcp",
+    "protocol_num": 6,
+    "uid": "104512"
+  },
+  "disposition": "Allowed",
+  "dst_endpoint": {
+    "ip": "203.0.113.9",
+    "port": 443
+  },
+  "firewall_rule": {
+    "name": "allow-web"
+  },
+  "metadata": {
+    "log_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "product": {
+      "name": "PAN-OS",
+      "vendor_name": "Palo Alto Networks"
+    },
+    "uid": "01a05e52-f78a-7a0b-bc34-cf3ce4f6952a"
+  },
+  "severity": "Informational",
+  "severity_id": 1,
+  "src_endpoint": {
+    "ip": "192.0.2.15",
+    "port": 51234
+  },
+  "status_id": 1,
+  "time": 1788264000000000000,
+  "traffic": {
+    "bytes_in": 3820,
+    "bytes_out": 1240,
+    "packets": 12,
+    "packets_in": 5,
+    "packets_out": 7
+  },
+  "type_name": "Network Activity: Traffic",
+  "type_uid": 400106,
+  "unmapped": {
+    "dst_zone": "untrust",
+    "nat_dst_ip": "203.0.113.9",
+    "nat_dst_port": "443",
+    "nat_src_ip": "198.51.100.7",
+    "nat_src_port": "51235",
+    "src_zone": "trust"
+  }
+}

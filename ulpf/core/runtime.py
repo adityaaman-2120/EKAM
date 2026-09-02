@@ -1,9 +1,9 @@
 """Runtime assembly: the pipeline plus every configured listener, run as one unit.
 
 ``Runtime`` is the object ``ulpf run`` drives. It builds a single
-:class:`~ulpf.core.pipeline.Pipeline` (``RawStoreStage`` -> ``ParseStage``),
-points every listener's ``on_event`` at :meth:`Pipeline.submit`, and manages
-orderly startup and shutdown:
+:class:`~ulpf.core.pipeline.Pipeline` (``RawStoreStage`` -> ``ParseStage`` ->
+``NormalizeStage``), points every listener's ``on_event`` at
+:meth:`Pipeline.submit`, and manages orderly startup and shutdown:
 
 * **start**  — pipeline workers, then the syslog UDP/TCP listeners, the syslog
   TLS listener (only if ``tls.cert_path``/``key_path`` are set), a file tailer
@@ -32,7 +32,9 @@ from ulpf.ingest.http_intake import create_intake_app
 from ulpf.ingest.syslog_tcp import SyslogTcpListener
 from ulpf.ingest.syslog_tls import SyslogTlsListener
 from ulpf.ingest.syslog_udp import SyslogUdpListener
+from ulpf.normalize.stage import NormalizeStage
 from ulpf.parse.coordinator import ParseCoordinator
+from ulpf.parse.dsl.loader import SourceRegistry
 from ulpf.sinks.raw_store import RawStore
 
 _log = logging.getLogger(__name__)
@@ -58,9 +60,17 @@ class Runtime:
         self._settings = settings
         self._raw_store = RawStore(settings)
         self._coordinator = ParseCoordinator()
+        self._sources = SourceRegistry()
+        sources_dir = settings.parse.sources_dir
+        sources_dir.mkdir(parents=True, exist_ok=True)
+        self._sources.load_all(sources_dir)
         self._pipeline = Pipeline(
             settings,
-            [RawStoreStage(self._raw_store), ParseStage(settings, self._coordinator)],
+            [
+                RawStoreStage(self._raw_store),
+                ParseStage(settings, self._coordinator),
+                NormalizeStage(settings, self._sources),
+            ],
         )
         self._udp = SyslogUdpListener()
         self._tcp = SyslogTcpListener()
@@ -93,6 +103,7 @@ class Runtime:
         """Start the pipeline, then bind every configured listener."""
         ingest = self._settings.ingest
         submit: _Submit = self._pipeline.submit
+        self._sources.start_watching()  # hot-reload source definitions (requirement e)
         self._pipeline.start()
         await self._udp.start(_BIND_HOST, ingest.syslog_udp_port, submit)
         await self._tcp.start(_BIND_HOST, ingest.syslog_tcp_port, submit)
@@ -140,6 +151,7 @@ class Runtime:
             with contextlib.suppress(asyncio.CancelledError, TimeoutError):
                 await asyncio.wait_for(task, timeout=5.0)
         self._bg.clear()
+        self._sources.stop_watching()
         await self._pipeline.stop()
 
     async def serve(self, on_started: _OnStarted | None = None) -> None:

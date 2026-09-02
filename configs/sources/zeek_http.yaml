@@ -1,0 +1,64 @@
+# Zeek http.log (JSON mode) -> OCSF HTTP Activity (4002).
+#
+# Zeek http.log is cleartext HTTP only (TLS-wrapped requests are not visible and
+# land in ssl.log), so `http_request.url.scheme` is a constant "http".
+# `activity_id` is derived from the HTTP method via a value map matching
+# ulpf.normalize.ocsf.http_activity.ACTIVITY_IDS.
+#
+# Detect: distinguished from conn.log / dns.log by the presence of "uri".
+
+name: zeek_http
+version: "1.0.0"
+vendor: "The Zeek Project"
+product: Zeek
+product_version: "6.x"
+priority: 15
+
+detect:
+  all:
+    - contains: '"uid"'
+    - contains: '"uri"'
+
+parse:
+  envelope: none
+  engine: json
+  options: {}
+
+normalize:
+  class_uid: 4002
+  category_uid: 4
+  constants:
+    metadata.product.vendor_name: "The Zeek Project"
+    metadata.product.name: Zeek
+    severity_id: 1
+    status_id: 1
+    http_request.url.scheme: http
+  activity_id:
+    from: method
+    map: {CONNECT: 1, DELETE: 2, GET: 3, HEAD: 4, OPTIONS: 5, POST: 6, PUT: 7, TRACE: 8}
+    default: 99               # Other
+  fields:
+    src_endpoint.ip: {from: id.orig_h, type: ip, required: true}
+    src_endpoint.port: {from: id.orig_p, type: int}
+    dst_endpoint.ip: {from: id.resp_h, type: ip, required: true}
+    dst_endpoint.port: {from: id.resp_p, type: int}
+
+    http_request.http_method: {from: method, type: str}
+    http_request.version: {from: version, type: str}
+    http_request.user_agent: {from: user_agent, type: str}
+    http_request.referrer: {from: referrer, type: str}
+    http_request.url.hostname: {from: host, type: str}
+    http_request.url.path: {from: uri, type: str}
+
+    http_response.code: {from: status_code, type: int}
+    http_response.length: {from: response_body_len, type: int}
+
+    connection_info.uid: {from: uid, type: str}
+
+    time: {from: ts, type: timestamp, required: true}
+
+  unmapped: keep_all           # trans_depth, status_msg, request_body_len, tags, resp_*, ...
+
+validate:
+  required: [http_request, src_endpoint.ip, time, class_uid, category_uid]
+  on_failure: dead_letter

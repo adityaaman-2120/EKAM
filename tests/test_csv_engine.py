@@ -56,6 +56,20 @@ def test_columns_option_is_required() -> None:
         _engine().parse("1,2,3", {})
 
 
+def test_column_map_option_resolves_a_version_keyed_map() -> None:
+    cols = get_column_map("panos_traffic", "11.0")
+    row = ",".join(str(i) for i in range(len(cols)))
+    result = _engine().parse(row, {"column_map": {"product": "panos_traffic", "version": "11.0"}})
+    assert result["src_ip"] == str(cols.index("src_ip"))
+    assert result["tunnel_inspection_rule"] == str(cols.index("tunnel_inspection_rule"))
+    assert len(result) == len(cols)
+
+
+def test_unknown_column_map_raises() -> None:
+    with pytest.raises(ParseError):
+        _engine().parse("1,2", {"column_map": {"product": "panos_traffic", "version": "9.0"}})
+
+
 def test_multichar_delimiter_raises() -> None:
     with pytest.raises(ParseError):
         _engine().parse("1,2", {"columns": ["a", "b"], "delimiter": "||"})

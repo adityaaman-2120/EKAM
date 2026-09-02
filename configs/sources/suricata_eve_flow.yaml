@@ -1,0 +1,70 @@
+# Suricata EVE JSON, `event_type: "flow"` -> OCSF **Network Activity** (4001).
+#
+# A flow record summarises one connection (byte/packet counts, duration, TCP
+# state), so it maps to 4001. This is the sibling of suricata_eve_alert.yaml:
+# the SAME Suricata EVE stream feeds both files, and the `detect` rule
+# (event_type == "flow" vs "alert") decides which OCSF class each record becomes
+# -- one source, two OCSF classes.
+
+name: suricata_eve_flow
+version: "1.0.0"
+vendor: OISF
+product: Suricata
+product_version: "7.x"
+priority: 15
+
+detect:
+  all:
+    - contains: '"event_type"'
+    - field_equals: {name: event_type, value: flow}
+
+parse:
+  envelope: none
+  engine: json
+  options: {}
+
+normalize:
+  class_uid: 4001
+  category_uid: 4
+  constants:
+    metadata.product.vendor_name: OISF
+    metadata.product.name: Suricata
+    severity_id: 1          # flow records are informational
+    status_id: 1
+    action_id: 1            # traffic flowed
+    action: Allowed
+  activity_id:
+    from: flow.state
+    map: {new: 1, established: 6, closed: 2, bypassed: 6, "local_bypassed": 6}
+    default: 6              # Traffic
+  fields:
+    src_endpoint.ip: {from: src_ip, type: ip, required: true}
+    src_endpoint.port: {from: src_port, type: int}
+    dst_endpoint.ip: {from: dest_ip, type: ip, required: true}
+    dst_endpoint.port: {from: dest_port, type: int}
+
+    app_name: {from: app_proto, type: str}
+
+    connection_info.uid: {from: flow_id, type: str}
+    connection_info.tcp_flags: {from: tcp.tcp_flags, type: str}
+    connection_info.protocol_num:
+      from: proto
+      map: {TCP: 6, UDP: 17, ICMP: 1, "6": 6, "17": 17, "1": 1}
+      default: 0
+    connection_info.protocol_name:
+      from: proto
+      map: {TCP: tcp, UDP: udp, ICMP: icmp, "6": tcp, "17": udp, "1": icmp}
+      default: null
+
+    traffic.bytes_out: {from: flow.bytes_toserver, type: int}   # source -> dest
+    traffic.bytes_in: {from: flow.bytes_toclient, type: int}
+    traffic.packets_out: {from: flow.pkts_toserver, type: int}
+    traffic.packets_in: {from: flow.pkts_toclient, type: int}
+
+    time: {from: timestamp, type: timestamp, required: true}
+
+  unmapped: keep_all       # flow_id, flow.state/reason/age, tcp.*, in_iface, ...
+
+validate:
+  required: [src_endpoint.ip, dst_endpoint.ip, time, class_uid, category_uid]
+  on_failure: dead_letter

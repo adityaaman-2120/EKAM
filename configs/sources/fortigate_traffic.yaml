@@ -1,0 +1,130 @@
+# Fortinet FortiGate forward-traffic logs (key=value) -> OCSF Network Activity (4001).
+#
+# FortiGate emits one flat `key=value` record per event (values may be quoted).
+# The kv engine strips the quotes; every value arrives as a string. The syslog
+# PRI (`<189>`) is stripped by `envelope: syslog` (FortiGate uses a bare-PRI
+# header with no RFC 3164 timestamp), and a header-less record is handled too.
+#
+# `date` and `time` are separate fields; `time` is built by MULTI-FIELD
+# CONCATENATION (`from: [date, time]` + a `format`), which the mapper joins with
+# a space before parsing. `proto` is already an IANA protocol NUMBER, so it maps
+# straight to connection_info.protocol_num, with a small lookup for the name.
+#
+# `unmapped: keep_all` keeps every FortiGate field the kv engine produced but
+# that we did not map (subtype, vd, service, NAT trandisp/transip/transport,
+# eventtime, duration, ...). OCSF 4001 has no symmetric NAT endpoint pair, so
+# the translated address/port stay in `unmapped`; the raw line is in bronze too.
+
+name: fortigate_traffic
+version: "1.0.0"
+vendor: Fortinet
+product: FortiGate
+product_version: "7.x"
+priority: 20
+
+detect:
+  all:
+    - contains: 'type="traffic"'
+    - contains: 'logid='
+
+parse:
+  envelope: syslog
+  engine: kv
+  options: {}
+
+normalize:
+  class_uid: 4001
+  category_uid: 4
+  constants:
+    metadata.product.vendor_name: Fortinet
+    metadata.product.name: FortiGate
+    status_id: 1
+  activity_id:
+    from: action
+    map: {accept: 1, start: 1, close: 2, timeout: 2, deny: 6, "server-rst": 3, "client-rst": 3}
+    default: 0
+  fields:
+    src_endpoint.ip: {from: srcip, type: ip, required: true}
+    src_endpoint.port: {from: srcport, type: int}
+    src_endpoint.interface_name: {from: srcintf, type: str}
+    dst_endpoint.ip: {from: dstip, type: ip, required: true}
+    dst_endpoint.port: {from: dstport, type: int}
+    dst_endpoint.interface_name: {from: dstintf, type: str}
+
+    connection_info.uid: {from: sessionid, type: str}
+    connection_info.protocol_num: {from: proto, type: int}
+    connection_info.protocol_name:
+      from: proto
+      map: {"6": TCP, "17": UDP, "1": ICMP}
+      default: null
+
+    action_id:
+      from: action
+      map: {accept: 1, start: 1, close: 1, timeout: 1, "server-rst": 1, "client-rst": 1, deny: 2}
+      default: 0
+    action:
+      from: action
+      map:
+        accept: Allowed
+        start: Allowed
+        close: Allowed
+        timeout: Allowed
+        "server-rst": Allowed
+        "client-rst": Allowed
+        deny: Denied
+      default: Unknown
+    activity_name:
+      from: action
+      map:
+        accept: Open
+        start: Open
+        close: Close
+        timeout: Close
+        "server-rst": Reset
+        "client-rst": Reset
+        deny: Traffic
+      default: Unknown
+    disposition:
+      from: action
+      map:
+        accept: Allowed
+        close: Allowed
+        deny: Blocked
+        "server-rst": Reset
+        "client-rst": Reset
+      default: null
+
+    traffic.bytes_out: {from: sentbyte, type: int}
+    traffic.bytes_in: {from: rcvdbyte, type: int}
+    traffic.packets_out: {from: sentpkt, type: int}
+    traffic.packets_in: {from: rcvdpkt, type: int}
+
+    firewall_rule.uid: {from: policyid, type: str}
+
+    severity_id:
+      from: level
+      map:
+        emergency: 6
+        alert: 5
+        critical: 5
+        error: 4
+        warning: 3
+        notification: 1
+        notice: 1
+        information: 1
+        informational: 1
+        debug: 1
+      default: 1
+
+    time:
+      from: [date, time]
+      type: timestamp
+      format: "%Y-%m-%d %H:%M:%S"
+      tz: UTC
+      required: true
+
+  unmapped: keep_all
+
+validate:
+  required: [src_endpoint.ip, dst_endpoint.ip, time, class_uid, category_uid]
+  on_failure: dead_letter

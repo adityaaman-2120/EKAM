@@ -1,0 +1,46 @@
+{
+  "action": "Allowed",
+  "action_id": 1,
+  "activity_id": 6,
+  "category_name": "Network Activity",
+  "category_uid": 4,
+  "class_name": "Network Activity",
+  "class_uid": 4001,
+  "connection_info": {
+    "protocol_name": "tcp",
+    "protocol_num": 6
+  },
+  "disposition": "Allowed",
+  "dst_endpoint": {
+    "ip": "203.0.113.9",
+    "port": 443
+  },
+  "metadata": {
+    "log_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "product": {
+      "name": "VPC Flow Logs",
+      "vendor_name": "Amazon Web Services"
+    },
+    "uid": "01a05e52-f78a-7a0b-bc34-cf3ce4f6952a"
+  },
+  "severity": "Informational",
+  "severity_id": 1,
+  "src_endpoint": {
+    "ip": "192.0.2.15",
+    "port": 51234
+  },
+  "status_id": 1,
+  "time": 1725278400000000000,
+  "traffic": {
+    "bytes": 1240,
+    "packets": 14
+  },
+  "type_name": "Network Activity: Traffic",
+  "type_uid": 400106,
+  "unmapped": {
+    "account_id": "123456789010",
+    "end": "1725278460",
+    "interface_id": "eni-0abc1234def567890",
+    "version": "2"
+  }
+}

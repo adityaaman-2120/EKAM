@@ -1,0 +1,1 @@
+<134>Oct 11 22:14:45 fw01 %ASA-6-302014: Teardown TCP connection 12345 for outside:203.0.113.9/443 to inside:192.0.2.15/51234 duration 0:00:30 bytes 5678 TCP FINs

@@ -1,0 +1,50 @@
+{
+  "action": "Allowed",
+  "action_id": 1,
+  "activity_id": 2,
+  "activity_name": "Close",
+  "category_name": "Network Activity",
+  "category_uid": 4,
+  "class_name": "Network Activity",
+  "class_uid": 4001,
+  "connection_info": {
+    "direction": "Unknown",
+    "direction_id": 0,
+    "protocol_name": "tcp",
+    "protocol_num": 6,
+    "uid": "12345"
+  },
+  "disposition": "Allowed",
+  "dst_endpoint": {
+    "ip": "203.0.113.9",
+    "port": 443
+  },
+  "metadata": {
+    "event_code": "302014",
+    "log_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "product": {
+      "name": "Cisco ASA",
+      "vendor_name": "Cisco"
+    },
+    "uid": "01a05e52-f78a-7a0b-bc34-cf3ce4f6952a"
+  },
+  "severity": "Informational",
+  "severity_id": 1,
+  "src_endpoint": {
+    "ip": "192.0.2.15",
+    "port": 51234
+  },
+  "status_id": 1,
+  "traffic": {
+    "bytes": 5678
+  },
+  "type_name": "Network Activity: Close",
+  "type_uid": 400102,
+  "unmapped": {
+    "dst_iface": "outside",
+    "duration": "0:00:30",
+    "fw_host": "fw01",
+    "src_iface": "inside",
+    "teardown_reason": "TCP FINs"
+  }
+}

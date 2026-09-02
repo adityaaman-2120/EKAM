@@ -5,7 +5,11 @@ delimiters are handled) and mapped onto an ordered ``columns`` list by position.
 
 Options:
 
-* ``columns``    — ordered list of field names (required).
+* ``columns``    — ordered list of field names.
+* ``column_map`` — ``{"product": ..., "version": ...}`` resolved against
+  :data:`ulpf.parse.column_maps.COLUMN_MAPS` (used when ``columns`` is absent).
+  This is the version-keyed path for PAN-OS-style logs whose field *order*
+  changes between releases. One of ``columns`` / ``column_map`` is required.
 * ``delimiter``  — single character, default ``","``.
 * ``quotechar``  — single character, default ``'"'``.
 * ``skip_empty`` — map empty fields to ``None`` (default ``True``).
@@ -23,6 +27,7 @@ import csv
 from typing import Any
 
 from ulpf.core.errors import ParseError
+from ulpf.parse.column_maps import get_column_map
 from ulpf.parse.registry import registry
 
 
@@ -33,10 +38,12 @@ class CsvEngine:
     name = "csv"
 
     def parse(self, text: str, options: dict[str, Any]) -> dict[str, Any]:
-        """Split ``text`` and map it positionally onto ``options['columns']``."""
-        columns = options.get("columns")
+        """Split ``text`` and map it positionally onto the resolved column list."""
+        columns = options.get("columns") or _resolve_column_map(options.get("column_map"))
         if not columns:
-            raise ParseError("csv engine requires a non-empty 'columns' option")
+            raise ParseError(
+                "csv engine requires a 'columns' list or a resolvable 'column_map' option"
+            )
         delimiter = options.get("delimiter", ",")
         quotechar = options.get("quotechar", '"')
         skip_empty = bool(options.get("skip_empty", True))
@@ -47,6 +54,19 @@ class CsvEngine:
 
         row = _read_row(text, delimiter, quotechar)
         return _map_row(row, [str(name) for name in columns], skip_empty)
+
+
+def _resolve_column_map(spec: Any) -> list[str] | None:
+    """Resolve a ``{"product", "version"}`` mapping to an ordered column list."""
+    if not isinstance(spec, dict):
+        return None
+    product, version = spec.get("product"), spec.get("version")
+    if not product or version is None:
+        return None
+    try:
+        return get_column_map(str(product), str(version))
+    except KeyError as exc:
+        raise ParseError("unknown column_map", detail={"column_map": spec}) from exc
 
 
 def _read_row(text: str, delimiter: str, quotechar: str) -> list[str]:

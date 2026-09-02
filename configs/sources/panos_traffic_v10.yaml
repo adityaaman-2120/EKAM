@@ -1,0 +1,103 @@
+# Palo Alto PAN-OS 10.x TRAFFIC logs (syslog envelope + headerless CSV body) -> OCSF Network Activity (4001).
+#
+# WHY THIS FILE IS NAMED _v10 AND DECLARES product_version:
+#   PAN-OS TRAFFIC logs are a POSITIONAL CSV with no header. The field ORDER
+#   changes between major releases: PAN-OS 11.0 inserts `tunnel_inspection_rule`
+#   into the middle of the record (after `rule_name`) and appends
+#   `link_change_count` / `policy_id` / `link_switches` at the end, so every
+#   column after position 11 shifts. Decoding an 11.0 line with a 10.x column
+#   list mislabels ~35 fields. There is therefore one source file per major
+#   version; each pins `product_version` and points the csv engine at the
+#   matching version-keyed column map (ulpf/parse/column_maps.py). See
+#   panos_traffic_v11.yaml — its `normalize` block is identical to this one; only
+#   `product_version` and `parse.options.column_map.version` differ.
+#
+# The syslog line uses IETF/RFC 5424 framing (`<PRI>1 TIMESTAMP HOST - - - - MSG`)
+# so the envelope stripper hands the CSV body over intact; PAN-OS BSD-format
+# syslog would need the leading `1,<recv-time>` treated as a syslog tag.
+
+name: panos_traffic_v10
+version: "1.0.0"
+vendor: "Palo Alto Networks"
+product: "PAN-OS"
+product_version: "10.x"
+priority: 20
+
+detect:
+  all:
+    - regex: '\bpa-fw|PA-|PAN-OS\b'   # cheap host/vendor hint
+    - contains: ",TRAFFIC,"
+
+parse:
+  envelope: syslog
+  engine: csv
+  options:
+    column_map: {product: panos_traffic, version: "10.1"}
+
+normalize:
+  class_uid: 4001
+  category_uid: 4
+  activity_id: 6            # Network Activity: Traffic
+  constants:
+    metadata.product.vendor_name: "Palo Alto Networks"
+    metadata.product.name: "PAN-OS"
+    severity_id: 1          # TRAFFIC logs are informational
+    status_id: 1
+  fields:
+    src_endpoint.ip: {from: src_ip, type: ip, required: true}
+    src_endpoint.port: {from: src_port, type: int}
+    dst_endpoint.ip: {from: dst_ip, type: ip, required: true}
+    dst_endpoint.port: {from: dst_port, type: int}
+
+    app_name: {from: app, type: str}
+
+    connection_info.uid: {from: session_id, type: str}
+    connection_info.protocol_name:
+      from: protocol
+      map: {tcp: tcp, udp: udp, icmp: icmp, "6": tcp, "17": udp, "1": icmp}
+      default: null
+    connection_info.protocol_num:
+      from: protocol
+      map: {tcp: 6, udp: 17, icmp: 1, "6": 6, "17": 17, "1": 1}
+      default: 0
+
+    action_id:
+      from: action
+      map: {allow: 1, deny: 2, drop: 2, "reset-both": 2, "reset-client": 2, "reset-server": 2}
+      default: 0
+    action:
+      from: action
+      map: {allow: Allowed, deny: Denied, drop: Denied, "reset-both": Denied, "reset-client": Denied, "reset-server": Denied}
+      default: Unknown
+    disposition:
+      from: action
+      map: {allow: Allowed, deny: Blocked, drop: Dropped, "reset-both": Reset, "reset-client": Reset, "reset-server": Reset}
+      default: null
+
+    firewall_rule.name: {from: rule_name, type: str}
+
+    traffic.bytes_out: {from: bytes_sent, type: int}       # sent by the session initiator
+    traffic.bytes_in: {from: bytes_received, type: int}
+    traffic.packets: {from: packets, type: int}
+    traffic.packets_out: {from: packets_sent, type: int}
+    traffic.packets_in: {from: packets_received, type: int}
+
+    time:
+      from: generated_time
+      type: timestamp
+      format: "%Y/%m/%d %H:%M:%S"
+      tz: UTC
+      required: true
+
+  # OCSF 4001 has ONE src_endpoint and ONE dst_endpoint and no symmetric pre-/
+  # post-NAT endpoint pair, and no first-class zone attribute (see the KNOWN GAPS
+  # in ulpf/normalize/ocsf/network_activity.py). The NAT-translated address/port
+  # pairs and the firewall zones are kept verbatim here so the analyst can still
+  # see the post-NAT address and the trust boundary. (Other PAN-OS fields not
+  # listed here are still in the raw event in the bronze store; add them to this
+  # list or switch to `keep_all` if you want them in the OCSF record too.)
+  unmapped: [nat_src_ip, nat_dst_ip, nat_src_port, nat_dst_port, src_zone, dst_zone]
+
+validate:
+  required: [src_endpoint.ip, dst_endpoint.ip, time, class_uid, category_uid]
+  on_failure: dead_letter

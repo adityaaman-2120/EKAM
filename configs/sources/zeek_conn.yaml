@@ -1,0 +1,100 @@
+# Zeek conn.log (JSON mode) -> OCSF Network Activity (4001).
+#
+# Zeek writes JSON with LITERAL dotted keys (`id.orig_h`, `id.resp_p`, ...); the
+# json engine keeps them verbatim, so `from: id.orig_h` addresses that exact key.
+#
+# conn_state -> activity_id. Zeek conn_state meanings:
+#   S0     connection attempt seen, NO reply           -> Fail  (often scanning)
+#   S1/S2/S3  established, not (fully) closed           -> Open
+#   SF     normal establishment AND termination        -> Close
+#   REJ    connection attempt REJECTED                 -> Refuse
+#   RSTO   established, ORIGINATOR aborted (sent RST)   -> Reset
+#   RSTR   established, RESPONDER  aborted (sent RST)   -> Reset
+#   RSTOS0 orig SYN then RST, no resp SYN-ACK          -> Reset
+#   RSTRH  resp SYN-ACK then RST, no orig SYN          -> Reset
+#   SH     orig SYN then FIN, no resp SYN-ACK  (half-open / stealth scan) -> Fail
+#   SHR    resp SYN-ACK then FIN, no orig SYN  (half-open)                -> Fail
+#   OTH    no SYN seen, midstream traffic               -> Traffic
+#
+# The `history` field is kept in `unmapped`. Zeek `history` is the ordered
+# sequence of connection state letters as seen on the wire, where the CASE
+# encodes which side sent it: UPPERCASE = ORIGINATOR, lowercase = RESPONDER.
+# Letters: S=SYN, H=SYN+ACK, A=ACK, D=payload, F=FIN, R=RST, C=bad checksum,
+# T=retransmit, W=zero window, I=inconsistent, Q=multi-flag, ^=connection
+# direction was flipped. Example: "ShADadFf" = orig SYN, resp SYN-ACK, orig ACK,
+# orig data, resp ACK, resp data, orig FIN, resp FIN  (a clean full connection).
+
+name: zeek_conn
+version: "1.0.0"
+vendor: "The Zeek Project"
+product: Zeek
+product_version: "6.x"
+priority: 15
+
+detect:
+  all:
+    - contains: '"uid"'
+    - contains: '"conn_state"'
+
+parse:
+  envelope: none
+  engine: json
+  options: {}
+
+normalize:
+  class_uid: 4001
+  category_uid: 4
+  constants:
+    metadata.product.vendor_name: "The Zeek Project"
+    metadata.product.name: Zeek
+    severity_id: 1              # conn.log is passive observation, not a verdict
+    status_id: 1
+    action_id: 1               # Zeek does not block; traffic was observed
+    action: Allowed
+  activity_id:
+    from: conn_state
+    map:
+      S0: 4
+      S1: 1
+      S2: 1
+      S3: 1
+      SF: 2
+      REJ: 5
+      RSTO: 3
+      RSTR: 3
+      RSTOS0: 3
+      RSTRH: 3
+      SH: 4
+      SHR: 4
+      OTH: 6
+    default: 6                 # Traffic
+  fields:
+    src_endpoint.ip: {from: id.orig_h, type: ip, required: true}
+    src_endpoint.port: {from: id.orig_p, type: int}
+    dst_endpoint.ip: {from: id.resp_h, type: ip, required: true}
+    dst_endpoint.port: {from: id.resp_p, type: int}
+
+    app_name: {from: service, type: str}
+
+    connection_info.uid: {from: uid, type: str}
+    connection_info.protocol_num:
+      from: proto
+      map: {tcp: 6, udp: 17, icmp: 1}
+      default: 0
+    connection_info.protocol_name:
+      from: proto
+      map: {tcp: tcp, udp: udp, icmp: icmp}
+      default: null
+
+    traffic.bytes_out: {from: orig_bytes, type: int}
+    traffic.bytes_in: {from: resp_bytes, type: int}
+    traffic.packets_out: {from: orig_pkts, type: int}
+    traffic.packets_in: {from: resp_pkts, type: int}
+
+    time: {from: ts, type: timestamp, required: true}
+
+  unmapped: keep_all           # keeps `history`, local_orig/local_resp, *_ip_bytes, ...
+
+validate:
+  required: [src_endpoint.ip, dst_endpoint.ip, time, class_uid, category_uid]
+  on_failure: dead_letter

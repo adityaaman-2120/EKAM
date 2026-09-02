@@ -1,0 +1,127 @@
+# Cisco ASA connection/ACL syslog -> OCSF Network Activity (4001).
+#
+# DESIGN CHOICE: one YAML, one grok pattern with FOUR alternatives tried in
+# order, rather than three separate files.
+#   * All three message IDs (302013 Built, 302014 Teardown, 106023 Deny) are the
+#     same vendor/product and the same OCSF class; three files would triplicate
+#     vendor/product/detect/normalize and let them drift.
+#   * The detect rule is one regex over the message IDs; splitting would force
+#     artificial per-file detect rules that just re-encode what grok already does.
+#   * activity_id / action_id / disposition are all keyed off the ASA message
+#     number, so keeping that logic in one `normalize` block is clearer.
+# The cost is one larger grok pattern; it is kept readable by naming the four
+# bodies as sub-patterns in `parse.options.patterns`.
+#
+# CRITICAL CORRECTNESS NOTE (encoded in the grok, not the mapper):
+#   In 302013/302014 ASA prints the LOWER-SECURITY interface FIRST, regardless of
+#   which host actually initiated the flow. So the first "iface:ip/port" is NOT
+#   reliably the source. Direction is taken from the "inbound"/"outbound" keyword:
+#     - "Built outbound" => flow is inside->outside: the SECOND ("to inside:...")
+#       endpoint is the source, the FIRST ("for outside:...") is the destination.
+#     - "Built inbound"  => flow is outside->inside: FIRST endpoint is the source.
+#   Two grok alternatives (ASA_BUILT_OUTBOUND / ASA_BUILT_INBOUND) select which
+#   captured endpoint is named `src_*` vs `dst_*` based on that keyword, so the
+#   mapper only ever maps `src_ip -> src_endpoint.ip` and never guesses by
+#   position.
+#   302014 Teardown has NO direction keyword. We assign by ASA's
+#   lower-security-first convention (position 2 = higher-security = inside =
+#   presumed source for the common outbound case) and leave
+#   connection_info.direction_id = 0 (Unknown), because a standalone teardown
+#   cannot establish direction. 106023 Deny labels "src"/"dst" explicitly, so
+#   there is no positional ambiguity there.
+#
+# PROTOCOL: 106023 may print the protocol as a keyword ("tcp") OR as a numeric
+#   IP protocol number ("6"); 302013/302014 print it uppercase ("TCP"). ASA_PROTO
+#   accepts all three forms and the `map`s below normalise keyword/number/case to
+#   both protocol_name and protocol_num.
+#
+# NAT: the translated ("xlate") address/port pairs are captured as
+#   xlate_src_* / xlate_dst_* and left UNMAPPED (unmapped: keep_all) because OCSF
+#   4001 has no symmetric pre/post NAT endpoint pair — see network_activity.py.
+#
+# EVENT CODE: the ASA message number (302013 etc.) is mapped to
+#   metadata.event_code and drives activity_id / action_id / disposition.
+
+name: cisco_asa
+version: "1.0.0"
+vendor: Cisco
+product: ASA
+product_version: "9.x"
+priority: 20
+
+detect:
+  regex: '%ASA-\d-(?:302013|302014|106023):'
+
+parse:
+  envelope: none  # the grok pattern consumes the whole syslog line
+  engine: grok
+  options:
+    patterns:
+      IFACE: '[^\s:]+'
+      ASA_PROTO: '(?:[A-Za-z]+|[0-9]{1,3})'
+      ASA_BUILT_OUTBOUND: 'Built (?=outbound )%{WORD:asa_direction} %{ASA_PROTO:proto} connection %{INT:conn_id} for %{IFACE:dst_iface}:%{IP:dst_ip}/%{INT:dst_port} \(%{IP:xlate_dst_ip}/%{INT:xlate_dst_port}\) to %{IFACE:src_iface}:%{IP:src_ip}/%{INT:src_port} \(%{IP:xlate_src_ip}/%{INT:xlate_src_port}\)'
+      ASA_BUILT_INBOUND: 'Built (?=inbound )%{WORD:asa_direction} %{ASA_PROTO:proto} connection %{INT:conn_id} for %{IFACE:src_iface}:%{IP:src_ip}/%{INT:src_port} \(%{IP:xlate_src_ip}/%{INT:xlate_src_port}\) to %{IFACE:dst_iface}:%{IP:dst_ip}/%{INT:dst_port} \(%{IP:xlate_dst_ip}/%{INT:xlate_dst_port}\)'
+      ASA_TEARDOWN: 'Teardown %{ASA_PROTO:proto} connection %{INT:conn_id} for %{IFACE:dst_iface}:%{IP:dst_ip}/%{INT:dst_port} to %{IFACE:src_iface}:%{IP:src_ip}/%{INT:src_port} duration %{NOTSPACE:duration} bytes %{INT:bytes}(?: %{GREEDYDATA:teardown_reason})?'
+      ASA_DENY: 'Deny %{ASA_PROTO:proto} src %{IFACE:src_iface}:%{IP:src_ip}(?:/%{INT:src_port})? dst %{IFACE:dst_iface}:%{IP:dst_ip}(?:/%{INT:dst_port})? by access-group "%{DATA:acl_name}" \[%{DATA:acl_hash}\]'
+    pattern: '%{SYSLOGTIMESTAMP:ts} %{HOSTNAME:fw_host} %ASA-%{INT:asa_severity}-%{INT:event_code}: (?:%{ASA_BUILT_OUTBOUND}|%{ASA_BUILT_INBOUND}|%{ASA_TEARDOWN}|%{ASA_DENY})'
+
+normalize:
+  class_uid: 4001
+  category_uid: 4
+  activity_id:
+    from: event_code
+    map: {"302013": 1, "302014": 2, "106023": 6}  # Open / Close / Traffic
+    default: 0
+  constants:
+    metadata.product.vendor_name: Cisco
+    metadata.product.name: Cisco ASA
+    status_id: 1  # the firewall applied its policy successfully
+  fields:
+    metadata.event_code: {from: event_code, type: str}
+
+    src_endpoint.ip: {from: src_ip, type: ip, required: true}
+    src_endpoint.port: {from: src_port, type: int}
+    dst_endpoint.ip: {from: dst_ip, type: ip, required: true}
+    dst_endpoint.port: {from: dst_port, type: int}
+
+    connection_info.uid: {from: conn_id, type: str}
+    connection_info.protocol_name:
+      from: proto
+      map: {TCP: tcp, tcp: tcp, UDP: udp, udp: udp, ICMP: icmp, icmp: icmp, "6": tcp, "17": udp, "1": icmp}
+      default: null
+    connection_info.protocol_num:
+      from: proto
+      map: {TCP: 6, tcp: 6, UDP: 17, udp: 17, ICMP: 1, icmp: 1, GRE: 47, gre: 47, ESP: 50, esp: 50, "1": 1, "6": 6, "17": 17, "47": 47, "50": 50}
+      default: 0
+    connection_info.direction_id:
+      from: asa_direction
+      map: {outbound: 2, inbound: 1}   # 302014/106023 have no keyword -> default 0
+      default: 0
+    connection_info.direction:
+      from: asa_direction
+      map: {outbound: Outbound, inbound: Inbound}
+      default: Unknown
+
+    severity_id:
+      from: asa_severity
+      map: {"0": 6, "1": 5, "2": 5, "3": 4, "4": 3, "5": 2, "6": 1, "7": 1}  # ASA sev -> OCSF severity_id
+      default: 1
+
+    activity_name:
+      from: event_code
+      map: {"302013": Open, "302014": Close, "106023": Traffic}
+      default: Unknown
+    action_id: {from: event_code, map: {"106023": 2}, default: 1}       # Denied / Allowed
+    action: {from: event_code, map: {"106023": Denied}, default: Allowed}
+    disposition: {from: event_code, map: {"106023": Blocked}, default: Allowed}
+
+    firewall_rule.name: {from: acl_name, type: str}
+    traffic.bytes: {from: bytes, type: int}
+
+    time: {from: ts, type: timestamp, required: true}
+
+  unmapped: keep_all  # xlate_* NAT addrs, interface names, fw_host, ... all kept
+
+validate:
+  required: [src_endpoint.ip, dst_endpoint.ip, time, class_uid, category_uid]
+  on_failure: dead_letter

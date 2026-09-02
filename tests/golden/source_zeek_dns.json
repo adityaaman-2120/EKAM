@@ -1,0 +1,57 @@
+{
+  "activity_id": 2,
+  "category_name": "Network Activity",
+  "category_uid": 4,
+  "class_name": "DNS Activity",
+  "class_uid": 4003,
+  "connection_info": {
+    "protocol_name": "udp",
+    "protocol_num": 17,
+    "uid": "CpQdmn2iH8i0V0aMc"
+  },
+  "dst_endpoint": {
+    "ip": "203.0.113.53",
+    "port": 53
+  },
+  "metadata": {
+    "log_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "product": {
+      "name": "Zeek",
+      "vendor_name": "The Zeek Project"
+    },
+    "uid": "01a05e52-f78a-7a0b-bc34-cf3ce4f6952a"
+  },
+  "query": {
+    "class": "IN",
+    "hostname": "example.com",
+    "type": "A"
+  },
+  "rcode": "NoError",
+  "rcode_id": 0,
+  "severity": "Informational",
+  "severity_id": 1,
+  "src_endpoint": {
+    "ip": "192.0.2.15",
+    "port": 40000
+  },
+  "status_id": 1,
+  "time": 1697062455201000000,
+  "type_name": "DNS Activity: Response",
+  "type_uid": 400302,
+  "unmapped": {
+    "AA": false,
+    "RA": true,
+    "RD": true,
+    "TC": false,
+    "TTLs.0": 300.0,
+    "TTLs.1": 300.0,
+    "Z": 0,
+    "answers.0": "203.0.113.9",
+    "answers.1": "203.0.113.10",
+    "qclass": 1,
+    "qtype": 1,
+    "rejected": false,
+    "rtt": 0.051,
+    "trans_id": 41230
+  }
+}

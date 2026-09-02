@@ -5,7 +5,13 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-from ulpf.config.settings import IngestSettings, PipelineSettings, Settings, StorageSettings
+from ulpf.config.settings import (
+    IngestSettings,
+    ParseSettings,
+    PipelineSettings,
+    Settings,
+    StorageSettings,
+)
 from ulpf.core.runtime import Runtime
 from ulpf.sinks.raw_store import RawStore
 
@@ -20,6 +26,7 @@ def _settings(tmp_path: Path) -> Settings:
             state_path=tmp_path / "state",
         ),
         ingest=IngestSettings(syslog_udp_port=0, syslog_tcp_port=0, http_port=0),
+        parse=ParseSettings(sources_dir=tmp_path / "sources"),
         pipeline=PipelineSettings(worker_count=1),
     )
 

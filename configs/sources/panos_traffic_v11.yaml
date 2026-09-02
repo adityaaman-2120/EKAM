@@ -1,0 +1,97 @@
+# Palo Alto PAN-OS 11.x TRAFFIC logs -> OCSF Network Activity (4001).
+#
+# This is the version-keyed sibling of panos_traffic_v10.yaml. PAN-OS 11.0
+# reorders the positional CSV: `tunnel_inspection_rule` is inserted after
+# `rule_name` (shifting every later column by one) and three fields are appended
+# (`link_change_count`, `policy_id`, `link_switches`). A 10.x column list would
+# therefore mislabel an 11.x row (its `src_port` would read the 11.x `repeat_count`
+# slot, etc.).
+#
+# The ONLY differences from the v10 file are:
+#   * product_version: "11.x"
+#   * parse.options.column_map.version: "11.0"
+#   * a distinct `name` / `priority`
+# The `normalize` block below is byte-for-byte identical to v10 — the version
+# skew is handled entirely by the column map, not by the OCSF mapping.
+
+name: panos_traffic_v11
+version: "1.0.0"
+vendor: "Palo Alto Networks"
+product: "PAN-OS"
+product_version: "11.x"
+priority: 20
+
+detect:
+  all:
+    - regex: '\bpa-fw|PA-|PAN-OS\b'
+    - contains: ",TRAFFIC,"
+
+parse:
+  envelope: syslog
+  engine: csv
+  options:
+    column_map: {product: panos_traffic, version: "11.0"}
+
+normalize:
+  class_uid: 4001
+  category_uid: 4
+  activity_id: 6
+  constants:
+    metadata.product.vendor_name: "Palo Alto Networks"
+    metadata.product.name: "PAN-OS"
+    severity_id: 1
+    status_id: 1
+  fields:
+    src_endpoint.ip: {from: src_ip, type: ip, required: true}
+    src_endpoint.port: {from: src_port, type: int}
+    dst_endpoint.ip: {from: dst_ip, type: ip, required: true}
+    dst_endpoint.port: {from: dst_port, type: int}
+
+    app_name: {from: app, type: str}
+
+    connection_info.uid: {from: session_id, type: str}
+    connection_info.protocol_name:
+      from: protocol
+      map: {tcp: tcp, udp: udp, icmp: icmp, "6": tcp, "17": udp, "1": icmp}
+      default: null
+    connection_info.protocol_num:
+      from: protocol
+      map: {tcp: 6, udp: 17, icmp: 1, "6": 6, "17": 17, "1": 1}
+      default: 0
+
+    action_id:
+      from: action
+      map: {allow: 1, deny: 2, drop: 2, "reset-both": 2, "reset-client": 2, "reset-server": 2}
+      default: 0
+    action:
+      from: action
+      map: {allow: Allowed, deny: Denied, drop: Denied, "reset-both": Denied, "reset-client": Denied, "reset-server": Denied}
+      default: Unknown
+    disposition:
+      from: action
+      map: {allow: Allowed, deny: Blocked, drop: Dropped, "reset-both": Reset, "reset-client": Reset, "reset-server": Reset}
+      default: null
+
+    firewall_rule.name: {from: rule_name, type: str}
+
+    traffic.bytes_out: {from: bytes_sent, type: int}
+    traffic.bytes_in: {from: bytes_received, type: int}
+    traffic.packets: {from: packets, type: int}
+    traffic.packets_out: {from: packets_sent, type: int}
+    traffic.packets_in: {from: packets_received, type: int}
+
+    time:
+      from: generated_time
+      type: timestamp
+      format: "%Y/%m/%d %H:%M:%S"
+      tz: UTC
+      required: true
+
+  # See panos_traffic_v10.yaml for the rationale: OCSF 4001 has no symmetric
+  # NAT endpoint pair and no zone attribute, so NAT addresses/ports and zones
+  # are kept verbatim in `unmapped`.
+  unmapped: [nat_src_ip, nat_dst_ip, nat_src_port, nat_dst_port, src_zone, dst_zone]
+
+validate:
+  required: [src_endpoint.ip, dst_endpoint.ip, time, class_uid, category_uid]
+  on_failure: dead_letter

@@ -1,0 +1,62 @@
+{
+  "action": "Allowed",
+  "action_id": 1,
+  "activity_id": 6,
+  "category_name": "Network Activity",
+  "category_uid": 4,
+  "class_name": "Network Activity",
+  "class_uid": 4001,
+  "connection_info": {
+    "protocol_name": "udp",
+    "protocol_num": 17
+  },
+  "disposition": "Allowed",
+  "dst_endpoint": {
+    "interface_name": "eth0",
+    "ip": "203.0.113.9",
+    "port": 53
+  },
+  "firewall_rule": {
+    "name": "FORWARD"
+  },
+  "metadata": {
+    "log_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "product": {
+      "name": "netfilter",
+      "vendor_name": "Linux"
+    },
+    "uid": "01a05e52-f78a-7a0b-bc34-cf3ce4f6952a"
+  },
+  "severity": "Informational",
+  "severity_id": 1,
+  "src_endpoint": {
+    "interface_name": "eth1",
+    "ip": "192.0.2.30",
+    "port": 51000
+  },
+  "status_id": 1,
+  "traffic": {
+    "bytes": 76
+  },
+  "type_name": "Network Activity: Traffic",
+  "type_uid": 400106,
+  "unmapped": {
+    "ID": "10001",
+    "MAC": "aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:08:00",
+    "PREC": "0x00",
+    "TOS": "0x00",
+    "TTL": "63",
+    "envelope.app_name": "kernel",
+    "envelope.facility": 0,
+    "envelope.facility_name": "kernel",
+    "envelope.format": "rfc3164",
+    "envelope.header_raw": "<4>Sep  2 10:16:04 gw kernel: ",
+    "envelope.hostname": "gw",
+    "envelope.pri": 4,
+    "envelope.pri_raw": "<4>",
+    "envelope.severity": 4,
+    "envelope.severity_name": "Warning",
+    "envelope.tag": "kernel",
+    "envelope.timestamp_raw": "Sep  2 10:16:04"
+  }
+}

@@ -1,0 +1,66 @@
+{
+  "action": "Allowed",
+  "action_id": 1,
+  "activity_id": 3,
+  "activity_name": "Reset",
+  "category_name": "Network Activity",
+  "category_uid": 4,
+  "class_name": "Network Activity",
+  "class_uid": 4001,
+  "connection_info": {
+    "protocol_name": "TCP",
+    "protocol_num": 6,
+    "uid": "104512"
+  },
+  "disposition": "Reset",
+  "dst_endpoint": {
+    "interface_name": "wan1",
+    "ip": "203.0.113.9",
+    "port": 443
+  },
+  "firewall_rule": {
+    "uid": "1"
+  },
+  "metadata": {
+    "log_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "product": {
+      "name": "FortiGate",
+      "vendor_name": "Fortinet"
+    },
+    "uid": "01a05e52-f78a-7a0b-bc34-cf3ce4f6952a"
+  },
+  "severity": "Informational",
+  "severity_id": 1,
+  "src_endpoint": {
+    "interface_name": "internal1",
+    "ip": "192.0.2.15",
+    "port": 51234
+  },
+  "status_id": 1,
+  "time": 1786832055000000000,
+  "traffic": {
+    "bytes_in": 0,
+    "bytes_out": 100,
+    "packets_in": 1,
+    "packets_out": 2
+  },
+  "type_name": "Network Activity: Reset",
+  "type_uid": 400103,
+  "unmapped": {
+    "devid": "FGT60FTK20000001",
+    "devname": "FGT60F",
+    "dstintfrole": "wan",
+    "duration": "12",
+    "eventtime": "1755295455123456789",
+    "logid": "0000000013",
+    "policytype": "policy",
+    "service": "HTTPS",
+    "srcintfrole": "lan",
+    "subtype": "forward",
+    "trandisp": "snat",
+    "transip": "198.51.100.7",
+    "transport": "51234",
+    "type": "traffic",
+    "vd": "root"
+  }
+}

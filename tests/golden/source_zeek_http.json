@@ -1,0 +1,55 @@
+{
+  "activity_id": 3,
+  "category_name": "Network Activity",
+  "category_uid": 4,
+  "class_name": "HTTP Activity",
+  "class_uid": 4002,
+  "connection_info": {
+    "uid": "CjhGs94Ci0V0aMcQ2"
+  },
+  "dst_endpoint": {
+    "ip": "203.0.113.150",
+    "port": 80
+  },
+  "http_request": {
+    "http_method": "GET",
+    "referrer": "http://example.com/",
+    "url": {
+      "hostname": "example.com",
+      "path": "/index.html",
+      "scheme": "http"
+    },
+    "user_agent": "curl/8.0.1",
+    "version": "1.1"
+  },
+  "http_response": {
+    "code": 200,
+    "length": 1256
+  },
+  "metadata": {
+    "log_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "product": {
+      "name": "Zeek",
+      "vendor_name": "The Zeek Project"
+    },
+    "uid": "01a05e52-f78a-7a0b-bc34-cf3ce4f6952a"
+  },
+  "severity": "Informational",
+  "severity_id": 1,
+  "src_endpoint": {
+    "ip": "192.0.2.41",
+    "port": 52000
+  },
+  "status_id": 1,
+  "time": 1697062455310000000,
+  "type_name": "HTTP Activity: Get",
+  "type_uid": 400203,
+  "unmapped": {
+    "request_body_len": 0,
+    "resp_fuids.0": "FEab12xyz",
+    "resp_mime_types.0": "text/html",
+    "status_msg": "OK",
+    "tags": [],
+    "trans_depth": 1
+  }
+}

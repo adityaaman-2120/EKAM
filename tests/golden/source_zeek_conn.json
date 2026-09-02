@@ -1,0 +1,53 @@
+{
+  "action": "Allowed",
+  "action_id": 1,
+  "activity_id": 2,
+  "app_name": "ssl",
+  "category_name": "Network Activity",
+  "category_uid": 4,
+  "class_name": "Network Activity",
+  "class_uid": 4001,
+  "connection_info": {
+    "protocol_name": "tcp",
+    "protocol_num": 6,
+    "uid": "CwjjYU2Xg9jZ5J8Zwj"
+  },
+  "dst_endpoint": {
+    "ip": "203.0.113.9",
+    "port": 443
+  },
+  "metadata": {
+    "log_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "product": {
+      "name": "Zeek",
+      "vendor_name": "The Zeek Project"
+    },
+    "uid": "01a05e52-f78a-7a0b-bc34-cf3ce4f6952a"
+  },
+  "severity": "Informational",
+  "severity_id": 1,
+  "src_endpoint": {
+    "ip": "192.0.2.15",
+    "port": 51234
+  },
+  "status_id": 1,
+  "time": 1697062455123456000,
+  "traffic": {
+    "bytes_in": 3820,
+    "bytes_out": 1240,
+    "packets_in": 12,
+    "packets_out": 14
+  },
+  "type_name": "Network Activity: Close",
+  "type_uid": 400102,
+  "unmapped": {
+    "duration": 12.34,
+    "history": "ShADadFf",
+    "local_orig": true,
+    "local_resp": false,
+    "missed_bytes": 0,
+    "orig_ip_bytes": 1800,
+    "resp_ip_bytes": 4300,
+    "tunnel_parents": []
+  }
+}

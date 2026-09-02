@@ -1,0 +1,94 @@
+# AWS VPC Flow Logs, default **version 2** format -> OCSF Network Activity (4001).
+#
+# A v2 record is a POSITIONAL, space-separated line of 14 fields:
+#   version account-id interface-id srcaddr dstaddr srcport dstport protocol
+#   packets bytes start end action log-status
+# so this uses the csv engine with `delimiter: " "` and an inline `columns` list.
+# `protocol` is the IANA protocol NUMBER (6 / 17 / 1), `start` / `end` are epoch
+# seconds, and `action` is ACCEPT / REJECT.
+#
+# `log-status` describes the CAPTURE, not the traffic:
+#   OK       - data was logged normally                 -> status_id 1 (Success)
+#   NODATA   - no traffic in the aggregation window     -> status_id 0 (Unknown)
+#   SKIPDATA - some records were skipped (capacity)     -> status_id 2 (Failure)
+# A NODATA / SKIPDATA line carries `-` for every flow field (no addresses), so it
+# has no 5-tuple: it fails the `src_endpoint.ip` requirement and is routed to the
+# dead-letter queue (never silently dropped - requirement a). The `log-status`
+# value is still mapped so the DLQ record explains why.
+#
+# This is ULPF's hybrid / multi-cloud story: the same OCSF 4001 shape a firewall
+# or Zeek conn.log produces, from a cloud provider's flow export. `account-id`
+# and `interface-id` (the ENI) are kept in `unmapped` for cloud attribution.
+
+name: aws_vpc_flow
+version: "1.0.0"
+vendor: "Amazon Web Services"
+product: "VPC Flow Logs"
+product_version: "2"
+priority: 30
+
+detect:
+  all:
+    - starts_with: "2 "
+    - regex: '^2 \d{12} eni-[0-9a-f]+ '
+
+parse:
+  envelope: none
+  engine: csv
+  options:
+    delimiter: " "
+    columns:
+      - version
+      - account_id
+      - interface_id
+      - srcaddr
+      - dstaddr
+      - srcport
+      - dstport
+      - protocol
+      - packets
+      - bytes
+      - start
+      - end
+      - action
+      - log_status
+
+normalize:
+  class_uid: 4001
+  category_uid: 4
+  activity_id: 6               # Traffic - a flow log line is an aggregated traffic record
+  constants:
+    metadata.product.vendor_name: "Amazon Web Services"
+    metadata.product.name: "VPC Flow Logs"
+    severity_id: 1
+  fields:
+    src_endpoint.ip: {from: srcaddr, type: ip, required: true}
+    src_endpoint.port: {from: srcport, type: int}
+    dst_endpoint.ip: {from: dstaddr, type: ip, required: true}
+    dst_endpoint.port: {from: dstport, type: int}
+
+    connection_info.protocol_num: {from: protocol, type: int}
+    connection_info.protocol_name:
+      from: protocol
+      map: {"6": tcp, "17": udp, "1": icmp, "58": ipv6-icmp, "47": gre, "50": esp}
+      default: null
+
+    action_id: {from: action, map: {ACCEPT: 1, REJECT: 2}, default: 0}
+    action: {from: action, map: {ACCEPT: Allowed, REJECT: Denied}, default: null}
+    disposition: {from: action, map: {ACCEPT: Allowed, REJECT: Blocked}, default: null}
+
+    status_id:
+      from: log_status
+      map: {OK: 1, NODATA: 0, SKIPDATA: 2}
+      default: 0
+
+    traffic.bytes: {from: bytes, type: int}
+    traffic.packets: {from: packets, type: int}
+
+    time: {from: start, type: timestamp, required: true}   # epoch seconds -> deterministic
+
+  unmapped: keep_all           # version, account_id, interface_id, end, ...
+
+validate:
+  required: [src_endpoint.ip, dst_endpoint.ip, time, class_uid, category_uid]
+  on_failure: dead_letter

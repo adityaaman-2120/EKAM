@@ -66,6 +66,11 @@ END_TO_END_LATENCY = Histogram(
     "ulpf_end_to_end_latency_seconds",
     "Wall-clock time from ingest to sink for one event.",
 )
+NORMALIZATION_COMPLETENESS = Histogram(
+    "ulpf_normalization_completeness",
+    "Fraction of an OCSF class's required+recommended attributes populated, per event.",
+    buckets=(0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0),
+)
 
 _ALL_METRICS = (
     EVENTS_RECEIVED,
@@ -79,6 +84,7 @@ _ALL_METRICS = (
     PARSE_SUCCESS_RATE,
     STAGE_LATENCY,
     END_TO_END_LATENCY,
+    NORMALIZATION_COMPLETENESS,
 )
 
 

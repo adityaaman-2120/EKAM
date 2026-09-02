@@ -1,0 +1,48 @@
+{
+  "action": "Denied",
+  "action_id": 2,
+  "activity_id": 6,
+  "activity_name": "Traffic",
+  "category_name": "Network Activity",
+  "category_uid": 4,
+  "class_name": "Network Activity",
+  "class_uid": 4001,
+  "connection_info": {
+    "direction": "Unknown",
+    "direction_id": 0,
+    "protocol_name": "tcp",
+    "protocol_num": 6
+  },
+  "disposition": "Blocked",
+  "dst_endpoint": {
+    "ip": "192.0.2.20",
+    "port": 22
+  },
+  "firewall_rule": {
+    "name": "outside_access_in"
+  },
+  "metadata": {
+    "event_code": "106023",
+    "log_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "product": {
+      "name": "Cisco ASA",
+      "vendor_name": "Cisco"
+    },
+    "uid": "01a05e52-f78a-7a0b-bc34-cf3ce4f6952a"
+  },
+  "severity": "Medium",
+  "severity_id": 3,
+  "src_endpoint": {
+    "ip": "203.0.113.55",
+    "port": 40001
+  },
+  "status_id": 1,
+  "type_name": "Network Activity: Traffic",
+  "type_uid": 400106,
+  "unmapped": {
+    "acl_hash": "0x0, 0x0",
+    "dst_iface": "inside",
+    "fw_host": "fw01",
+    "src_iface": "outside"
+  }
+}

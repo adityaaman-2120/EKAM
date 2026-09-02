@@ -1,0 +1,143 @@
+# Linux netfilter (iptables / nftables) kernel LOG lines -> OCSF Network Activity (4001).
+#
+# The kernel LOG / nft `log` target prints one space-separated `KEY=VALUE` record
+# per packet, with UPPERCASE keys: IN, OUT, MAC, SRC, DST, LEN, TOS, PREC, TTL,
+# ID, PROTO, SPT, DPT, WINDOW, RES, URGP (plus bare flag tokens like `DF` / `SYN`
+# that carry no `=` and are ignored by the kv engine). There is no wall-clock
+# field in the body: the timestamp is the syslog envelope's (`envelope: syslog`
+# strips the `<PRI>Mmm dd HH:MM:SS host kernel:` header and the coordinator merges
+# it back under `envelope.*`), so `time` is taken from `envelope.timestamp`.
+#
+# ACTION / LOG PREFIX (the "derive action from the prefix" requirement):
+#   netfilter's `--log-prefix` / nft `log prefix` string is FREE TEXT with no
+#   `=`, so the kv engine cannot surface a classic bracketed prefix such as
+#   `[UFW BLOCK]` as a field, and the scalar mapper has no regex-extract. Two
+#   supported paths:
+#     1. RECOMMENDED - format the rule's log prefix as `key=value` tokens, e.g.
+#        `--log-prefix "act=drop chain=INPUT "`. `act` (also accepted as
+#        `action` / `prefix`) is then a real field and is mapped below to
+#        action_id / action / disposition. This is the deployment ULPF expects.
+#     2. A line whose prefix is the bare `[UFW BLOCK]` form still normalises
+#        fully (endpoints, protocol, ports, bytes); only action_id falls to its
+#        default (0 / Unknown) and the bracketed verdict stays visible in the raw
+#        event in the bronze store (nothing is dropped - requirement a). To
+#        normalise those verdicts, reconfigure the prefix as `key=value` or add a
+#        grok source definition that captures the bracket text.
+#
+# PROTO is an UPPERCASE keyword (`TCP` / `UDP` / `ICMP`) or, for less common
+# protocols, a number; the maps below normalise both to protocol_name/num.
+
+name: iptables
+version: "1.0.0"
+vendor: Linux
+product: netfilter
+product_version: "iptables/nftables"
+priority: 30
+
+detect:
+  all:
+    - contains: "SRC="
+    - contains: "DST="
+    - contains: "PROTO="
+
+parse:
+  envelope: syslog
+  engine: kv
+  options: {}
+
+normalize:
+  class_uid: 4001
+  category_uid: 4
+  activity_id: 6               # Traffic - a LOG-target line is an observed packet
+  constants:
+    metadata.product.vendor_name: Linux
+    metadata.product.name: netfilter
+    severity_id: 1             # a firewall log line is informational; the verdict is action/disposition
+    status_id: 1
+  fields:
+    src_endpoint.ip: {from: SRC, type: ip, required: true}
+    src_endpoint.port: {from: SPT, type: int}
+    src_endpoint.interface_name: {from: IN, type: str}
+    dst_endpoint.ip: {from: DST, type: ip, required: true}
+    dst_endpoint.port: {from: DPT, type: int}
+    dst_endpoint.interface_name: {from: OUT, type: str}
+
+    connection_info.protocol_name:
+      from: PROTO
+      map: {TCP: tcp, UDP: udp, ICMP: icmp, ICMPV6: ipv6-icmp, "6": tcp, "17": udp, "1": icmp}
+      default: null
+    connection_info.protocol_num:
+      from: PROTO
+      map: {TCP: 6, UDP: 17, ICMP: 1, ICMPV6: 58, "6": 6, "17": 17, "1": 1, "58": 58}
+      default: 0
+
+    # Derived from a key=value log prefix token; `act` / `action` / `prefix` are
+    # all accepted (first present wins). A bare `[UFW BLOCK]` prefix leaves these
+    # at their defaults - see the LOG PREFIX note in the header.
+    action_id:
+      from: [act, action, prefix]
+      map:
+        drop: 2
+        DROP: 2
+        deny: 2
+        DENY: 2
+        reject: 2
+        REJECT: 2
+        block: 2
+        BLOCK: 2
+        accept: 1
+        ACCEPT: 1
+        allow: 1
+        ALLOW: 1
+        pass: 1
+        PASS: 1
+      default: 0
+    action:
+      from: [act, action, prefix]
+      map:
+        drop: Denied
+        DROP: Denied
+        deny: Denied
+        DENY: Denied
+        reject: Denied
+        REJECT: Denied
+        block: Denied
+        BLOCK: Denied
+        accept: Allowed
+        ACCEPT: Allowed
+        allow: Allowed
+        ALLOW: Allowed
+        pass: Allowed
+        PASS: Allowed
+      default: null
+    disposition:
+      from: [act, action, prefix]
+      map:
+        drop: Dropped
+        DROP: Dropped
+        deny: Blocked
+        DENY: Blocked
+        reject: Dropped
+        REJECT: Dropped
+        block: Blocked
+        BLOCK: Blocked
+        accept: Allowed
+        ACCEPT: Allowed
+        allow: Allowed
+        ALLOW: Allowed
+        pass: Allowed
+        PASS: Allowed
+      default: null
+
+    firewall_rule.uid: {from: rule, type: str}     # present only if the log prefix carries `rule=`
+    firewall_rule.name: {from: chain, type: str}   # present only if the log prefix carries `chain=`
+
+    traffic.bytes: {from: LEN, type: int}          # IP total length of the logged packet
+
+    time: {from: envelope.timestamp, type: timestamp, required: true}
+
+  unmapped: keep_all           # TTL, ID, TOS, PREC, WINDOW, RES, URGP, MAC, envelope.*, ...
+
+validate:
+  required: [src_endpoint.ip, dst_endpoint.ip, time, class_uid, category_uid]
+  on_failure: dead_letter

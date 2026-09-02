@@ -1,0 +1,81 @@
+# Suricata EVE JSON, `event_type: "alert"` -> OCSF **Detection Finding** (2004).
+#
+# An alert record describes a DETECTION (a signature fired), not a connection, so
+# it maps to class 2004 (category Findings) -- NOT to Network Activity (4001).
+# The paired file suricata_eve_flow.yaml maps `event_type: "flow"` from the SAME
+# Suricata EVE stream to 4001, i.e. one source produces two OCSF classes,
+# selected by the `detect` rule.
+#
+# Suricata `alert.severity` is INVERTED relative to OCSF: Suricata 1 is the
+# highest priority, OCSF severity_id 1 is the lowest (Informational). The map
+# below flips it (1 -> High, 2 -> Medium, 3 -> Low).
+
+name: suricata_eve_alert
+version: "1.0.0"
+vendor: OISF
+product: Suricata
+product_version: "7.x"
+priority: 15
+
+detect:
+  all:
+    - contains: '"event_type"'                       # cheap JSON guard
+    - field_equals: {name: event_type, value: alert}
+
+parse:
+  envelope: none
+  engine: json
+  options: {}
+
+normalize:
+  class_uid: 2004
+  category_uid: 2
+  activity_id: 1            # Detection Finding: Create
+  constants:
+    metadata.product.vendor_name: OISF
+    metadata.product.name: Suricata
+    status_id: 1            # New
+    finding_info.analytic.name: Suricata
+    finding_info.analytic.type: Rule
+    finding_info.analytic.type_id: 1
+  fields:
+    finding_info.uid: {from: alert.signature_id, type: str, required: true}
+    finding_info.title: {from: alert.signature, type: str}
+    # OCSF finding_info.types is a string[]; Suricata carries one category string.
+    # We keep the single value here (the raw array-capable field is available for
+    # a future enhancement that splits on a delimiter).
+    finding_info.types: {from: alert.category, type: str}
+
+    severity_id:
+      from: alert.severity
+      map: {"1": 4, "2": 3, "3": 2, "4": 1}   # inverted: Suricata 1 (high) -> OCSF 4 (High)
+      default: 3
+
+    action_id:
+      from: alert.action
+      map: {allowed: 1, pass: 1, blocked: 2, dropped: 2, drop: 2, reject: 2}
+      default: 0
+    action:
+      from: alert.action
+      map: {allowed: Allowed, pass: Allowed, blocked: Denied, dropped: Denied, drop: Denied, reject: Denied}
+      default: Unknown
+    disposition:
+      from: alert.action
+      map: {allowed: Allowed, blocked: Blocked, dropped: Dropped, drop: Dropped, reject: Blocked}
+      default: null
+
+    src_endpoint.ip: {from: src_ip, type: ip, required: true}
+    src_endpoint.port: {from: src_port, type: int}
+    dst_endpoint.ip: {from: dest_ip, type: ip, required: true}
+    dst_endpoint.port: {from: dest_port, type: int}
+
+    time: {from: timestamp, type: timestamp, required: true}
+
+  # keep_all preserves flow_id -- the key Suricata uses to correlate this alert
+  # to the matching flow / http / tls / fileinfo EVE records for the same
+  # connection -- plus the flow byte/packet counters and the rule metadata.
+  unmapped: keep_all
+
+validate:
+  required: [finding_info, src_endpoint.ip, time, class_uid, category_uid]
+  on_failure: dead_letter
