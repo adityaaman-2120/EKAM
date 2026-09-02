@@ -186,6 +186,4 @@ class Runtime:
                 loop.add_signal_handler(sig, stop_event.set)
             except (NotImplementedError, AttributeError, ValueError, RuntimeError):
                 with contextlib.suppress(ValueError, OSError, RuntimeError):
-                    signal.signal(
-                        sig, lambda *_: loop.call_soon_threadsafe(stop_event.set)
-                    )
+                    signal.signal(sig, lambda *_: loop.call_soon_threadsafe(stop_event.set))

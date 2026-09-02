@@ -7,8 +7,7 @@ import pytest
 from ulpf.detect.sniffer import Sniffer, sniff, sniff_layered
 
 _SYSLOG_WRAPPED_CEF = (
-    "<134>Sep 19 08:26:10 fw01 "
-    "CEF:0|Security|NGFW|1.0|100|deny|5|src=192.0.2.1 dst=203.0.113.9"
+    "<134>Sep 19 08:26:10 fw01 CEF:0|Security|NGFW|1.0|100|deny|5|src=192.0.2.1 dst=203.0.113.9"
 )
 
 # --------------------------------------------------------------------------

@@ -56,7 +56,7 @@ async def test_partial_final_line_held_until_newline(tmp_path: Path) -> None:
     assert sink.raws == [b'{"a":1}']
 
     with log.open("ab") as fh:
-        fh.write(b'2}\n')
+        fh.write(b"2}\n")
     assert await tailer.poll_once([str(log)], sink) == 1
     assert sink.raws == [b'{"a":1}', b'{"partial":2}']
 

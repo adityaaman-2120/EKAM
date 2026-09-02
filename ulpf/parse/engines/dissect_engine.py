@@ -128,9 +128,7 @@ def _dissect(text: str, compiled: CompiledPattern, append_sep: str) -> dict[str,
     last = len(compiled.fields) - 1
     for index, field in enumerate(compiled.fields):
         value, pos = (
-            _consume_last(text, pos, field)
-            if index == last
-            else _consume_middle(text, pos, field)
+            _consume_last(text, pos, field) if index == last else _consume_middle(text, pos, field)
         )
         _apply(out, field, value, append_sep)
     return out

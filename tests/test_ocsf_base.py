@@ -68,7 +68,9 @@ def test_build_metadata_pins_version_and_omits_unset() -> None:
 
 def test_build_endpoint_minimal_and_full() -> None:
     assert build_endpoint("192.0.2.1", 443) == {"ip": "192.0.2.1", "port": 443}
-    assert build_endpoint("192.0.2.1", 443, hostname="fw01", interface="eth0", mac="00:11:22:33:44:55") == {
+    assert build_endpoint(
+        "192.0.2.1", 443, hostname="fw01", interface="eth0", mac="00:11:22:33:44:55"
+    ) == {
         "ip": "192.0.2.1",
         "port": 443,
         "hostname": "fw01",

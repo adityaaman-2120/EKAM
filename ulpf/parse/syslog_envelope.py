@@ -28,14 +28,40 @@ import re
 from typing import Any
 
 _FACILITY_NAMES: dict[int, str] = {
-    0: "kernel", 1: "user", 2: "mail", 3: "daemon", 4: "auth", 5: "syslog",
-    6: "lpr", 7: "news", 8: "uucp", 9: "cron", 10: "authpriv", 11: "ftp",
-    12: "ntp", 13: "audit", 14: "alert", 15: "cron2",
-    16: "local0", 17: "local1", 18: "local2", 19: "local3",
-    20: "local4", 21: "local5", 22: "local6", 23: "local7",
+    0: "kernel",
+    1: "user",
+    2: "mail",
+    3: "daemon",
+    4: "auth",
+    5: "syslog",
+    6: "lpr",
+    7: "news",
+    8: "uucp",
+    9: "cron",
+    10: "authpriv",
+    11: "ftp",
+    12: "ntp",
+    13: "audit",
+    14: "alert",
+    15: "cron2",
+    16: "local0",
+    17: "local1",
+    18: "local2",
+    19: "local3",
+    20: "local4",
+    21: "local5",
+    22: "local6",
+    23: "local7",
 }
 _SEVERITY_NAMES: tuple[str, ...] = (
-    "Emergency", "Alert", "Critical", "Error", "Warning", "Notice", "Informational", "Debug",
+    "Emergency",
+    "Alert",
+    "Critical",
+    "Error",
+    "Warning",
+    "Notice",
+    "Informational",
+    "Debug",
 )
 
 _PRI_RE = re.compile(r"<(\d{1,3})>")
@@ -104,12 +130,18 @@ def _parse_rfc5424(
     envelope.update(
         format="rfc5424",
         version=version,
-        timestamp=_nil(timestamp), timestamp_raw=timestamp,
-        hostname=_nil(hostname), hostname_raw=hostname,
-        app_name=_nil(app_name), app_name_raw=app_name,
-        procid=_nil(procid), procid_raw=procid,
-        msgid=_nil(msgid), msgid_raw=msgid,
-        structured_data=structured, structured_data_raw=sd_raw,
+        timestamp=_nil(timestamp),
+        timestamp_raw=timestamp,
+        hostname=_nil(hostname),
+        hostname_raw=hostname,
+        app_name=_nil(app_name),
+        app_name_raw=app_name,
+        procid=_nil(procid),
+        procid_raw=procid,
+        msgid=_nil(msgid),
+        msgid_raw=msgid,
+        structured_data=structured,
+        structured_data_raw=sd_raw,
         header_raw=text[:msg_index],
     )
     return envelope, msg_index
@@ -193,9 +225,12 @@ def _parse_rfc3164(
 
     envelope.update(
         format="rfc3164",
-        timestamp=timestamp_raw, timestamp_raw=timestamp_raw,
+        timestamp=timestamp_raw,
+        timestamp_raw=timestamp_raw,
         hostname=hostname,
-        tag=tag, app_name=tag, procid=procid,
+        tag=tag,
+        app_name=tag,
+        procid=procid,
         header_raw=text[:msg_index],
     )
     return envelope, msg_index

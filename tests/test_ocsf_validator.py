@@ -8,7 +8,7 @@ from ulpf.core.metrics import snapshot
 from ulpf.normalize.ocsf import network_activity
 from ulpf.normalize.ocsf.base import build_endpoint, build_metadata, finalize
 from ulpf.normalize.ocsf.network_activity import build_connection_info, build_traffic
-from ulpf.normalize.validator import OcsfValidator, ValidationResult
+from ulpf.normalize.validator import OcsfValidator, ValidationResult, _is_populated
 
 _MD = build_metadata("uid-1", "Cisco", "ASA", "1.0.0", None)
 
@@ -52,9 +52,7 @@ def _expected_completeness(record: dict[str, Any]) -> float:
     attrs = list(dict.fromkeys([*shape["required"], *shape["recommended"]]))
 
     def populated(value: Any) -> bool:
-        return value is not None and not (
-            isinstance(value, (str, dict, list)) and len(value) == 0
-        )
+        return value is not None and not (isinstance(value, (str, dict, list)) and len(value) == 0)
 
     return sum(1 for a in attrs if populated(record.get(a))) / len(attrs)
 
@@ -165,3 +163,40 @@ def test_completeness_metric_is_recorded_per_event() -> None:
     validator.validate(_minimal_4001())
     validator.validate(_fuller_4001())
     assert snapshot()[key] - before == 2.0
+
+
+# --------------------------------------------------------------------------
+# _is_populated — what counts as a filled attribute for the completeness metric
+
+
+def test_none_is_not_populated() -> None:
+    assert _is_populated(None) is False
+
+
+def test_empty_str_dict_list_are_not_populated() -> None:
+    assert _is_populated("") is False
+    assert _is_populated({}) is False
+    assert _is_populated([]) is False
+
+
+def test_zero_is_populated() -> None:
+    # 0 is a legitimate value for a byte count or a port — counting it as
+    # unpopulated would silently understate completeness on every zero-byte event.
+    assert _is_populated(0) is True
+    assert _is_populated(0.0) is True
+
+
+def test_false_is_populated() -> None:
+    assert _is_populated(False) is True
+
+
+def test_empty_tuple_is_populated() -> None:
+    # tuple is not one of the emptiness-checked container types.
+    assert _is_populated(()) is True
+
+
+def test_non_empty_values_are_populated() -> None:
+    assert _is_populated("x") is True
+    assert _is_populated({"a": 1}) is True
+    assert _is_populated([0]) is True
+    assert _is_populated(42) is True

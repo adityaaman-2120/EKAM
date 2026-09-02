@@ -93,11 +93,19 @@ def test_action_maps_accept_and_reject() -> None:
     accept = _ocsf("aws_vpc_flow_accept.log")
     reject = _ocsf("aws_vpc_flow_reject.log")
 
-    assert (accept["action_id"], accept["action"], accept["disposition"]) == (1, "Allowed", "Allowed")
+    assert (accept["action_id"], accept["action"], accept["disposition"]) == (
+        1,
+        "Allowed",
+        "Allowed",
+    )
     assert accept["src_endpoint"] == {"ip": "192.0.2.15", "port": 51234}
     assert accept["traffic"] == {"bytes": 1240, "packets": 14}
 
-    assert (reject["action_id"], reject["action"], reject["disposition"]) == (2, "Denied", "Blocked")
+    assert (reject["action_id"], reject["action"], reject["disposition"]) == (
+        2,
+        "Denied",
+        "Blocked",
+    )
     assert reject["dst_endpoint"] == {"ip": "192.0.2.20", "port": 3389}
 
 

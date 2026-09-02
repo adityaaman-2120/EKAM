@@ -146,12 +146,25 @@ def _completeness(module: ModuleType, record: dict[str, Any]) -> float:
 
 
 def _is_populated(value: Any) -> bool:
-    """Whether an attribute counts as filled (``0``/``False`` do; empty str/dict/list don't)."""
+    """Whether an attribute counts as "populated" for the completeness metric.
+
+    Not populated:
+
+    * ``None`` — the attribute was never mapped.
+    * An empty ``str``, ``dict`` or ``list`` — a container with nothing in it.
+
+    Populated (these are legitimate values, not absence):
+
+    * ``0`` — a valid byte count, packet count, port, ``activity_id`` etc.
+    * ``False`` — a valid boolean field value.
+    * An empty ``tuple`` — not one of the emptiness-checked container types.
+
+    Counting ``0`` or ``False`` as unpopulated would silently understate
+    normalization completeness on every event with a zero byte count.
+    """
     if value is None:
         return False
-    if isinstance(value, (str, dict, list)) and len(value) == 0:
-        return False
-    return True
+    return not (isinstance(value, str | dict | list) and len(value) == 0)
 
 
 def _as_port(value: Any) -> int | None:

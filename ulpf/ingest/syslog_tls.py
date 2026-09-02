@@ -105,6 +105,4 @@ class SyslogTlsListener(FramedListenerBase):
     async def start(self, host: str, port: int, on_event: OnEvent) -> None:
         """Bind ``host:port`` (``port=0`` for ephemeral) and serve framed TLS connections."""
         self._on_event = on_event
-        self._server = await asyncio.start_server(
-            self._handle_client, host, port, ssl=self._ssl
-        )
+        self._server = await asyncio.start_server(self._handle_client, host, port, ssl=self._ssl)

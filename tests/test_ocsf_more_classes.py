@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 import pytest
 
-from ulpf.normalize.ocsf import CLASS_REGISTRY
+from ulpf.normalize.ocsf import (
+    CLASS_REGISTRY,
+    base,
+    detection_finding,
+    dns_activity,
+    http_activity,
+    network_activity,
+)
 from ulpf.normalize.ocsf import validate as registry_validate
-from ulpf.normalize.ocsf import base, detection_finding, dns_activity, http_activity, network_activity
 from ulpf.normalize.ocsf.base import build_endpoint, build_metadata, finalize
 
 _MD = build_metadata("uid-1", "V", "P", "1.0.0", None)
@@ -21,14 +25,14 @@ _DST = build_endpoint("203.0.113.9", 443)
 
 
 def test_class_registry_maps_uids_to_modules() -> None:
-    assert CLASS_REGISTRY == {
+    assert {
         4001: network_activity,
         2004: detection_finding,
         4002: http_activity,
         4003: dns_activity,
-    }
+    } == CLASS_REGISTRY
     for uid, module in CLASS_REGISTRY.items():
-        assert module.CLASS_UID == uid
+        assert uid == module.CLASS_UID
         assert callable(module.validate)
 
 
@@ -45,7 +49,7 @@ def test_registry_validate_dispatches_by_class_uid() -> None:
 
 def test_activity_id_enums_agree_with_base_activity_names() -> None:
     for uid in (4001, 4002, 4003, 2004):
-        assert CLASS_REGISTRY[uid].ACTIVITY_IDS == base.ACTIVITY_NAMES[uid]
+        assert base.ACTIVITY_NAMES[uid] == CLASS_REGISTRY[uid].ACTIVITY_IDS
 
 
 # --------------------------------------------------------------------------
@@ -131,7 +135,9 @@ def test_http_activity_build_and_validate() -> None:
             time=1_700_000_000_000_000_000,
             metadata=_MD,
             http_request=http_activity.build_http_request(
-                url=http_activity.build_url(text="http://x.example/a", hostname="x.example", path="/a"),
+                url=http_activity.build_url(
+                    text="http://x.example/a", hostname="x.example", path="/a"
+                ),
                 http_method="GET",
                 user_agent="curl/8",
                 version="1.1",

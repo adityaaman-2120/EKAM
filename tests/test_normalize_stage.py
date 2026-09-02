@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-import pytest
 import yaml
 
 from ulpf.config.settings import Settings, StorageSettings
@@ -143,7 +142,9 @@ async def test_no_source_match_passes_through_as_unknown_without_dlq(tmp_path: P
 
 async def test_invalid_record_is_dead_lettered_when_on_failure_dead_letter(tmp_path: Path) -> None:
     settings = _settings(tmp_path)
-    stage = NormalizeStage(settings, _registry(tmp_path, _incomplete_source(on_failure="dead_letter")))
+    stage = NormalizeStage(
+        settings, _registry(tmp_path, _incomplete_source(on_failure="dead_letter"))
+    )
     event = _parsed(_FORTI_LINE, _FORTI_FIELDS)
 
     result = await stage.process(event)

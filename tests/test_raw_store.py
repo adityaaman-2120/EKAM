@@ -49,7 +49,7 @@ def test_write_100_read_back_and_verify(tmp_path: Path) -> None:
     assert len(round_tripped) == 100
     for original in events:
         back = round_tripped[original.event_uid]
-        assert back.raw == original.raw          # exact bytes
+        assert back.raw == original.raw  # exact bytes
         assert back.raw_hash == original.raw_hash
         assert back.raw_len == original.raw_len
         assert store.read_by_uid(original.event_uid) == original
@@ -86,10 +86,10 @@ def test_autoflush_by_elapsed_time(tmp_path: Path) -> None:
         tmp_path, max_buffered_records=10_000, max_buffer_seconds=2.0, clock=lambda: now[0]
     )
     store.write(_event(1))
-    assert _disk_records(tmp_path / "bronze") == []   # not yet flushed
+    assert _disk_records(tmp_path / "bronze") == []  # not yet flushed
 
     now[0] = 3.0
-    store.write(_event(2))                            # elapsed 3s >= 2s -> flush
+    store.write(_event(2))  # elapsed 3s >= 2s -> flush
     assert len(_disk_records(tmp_path / "bronze")) == 2
 
 
@@ -98,7 +98,7 @@ def test_appends_across_flushes_never_overwrites(tmp_path: Path) -> None:
     store.write(_event(1))
     store.flush()
     store.write(_event(2))
-    store.flush()                                     # second gzip member appended
+    store.flush()  # second gzip member appended
     assert len(list(store.iter_all())) == 2
 
 
@@ -125,7 +125,7 @@ def test_verify_detects_tampered_file(tmp_path: Path) -> None:
             handle.write((json.dumps(record, sort_keys=True) + "\n").encode("utf-8"))
 
     assert store.verify(target.event_uid) is False
-    assert store.verify(events[3].event_uid) is True   # neighbours unaffected
+    assert store.verify(events[3].event_uid) is True  # neighbours unaffected
     assert store.verify(events[5].event_uid) is True
 
 

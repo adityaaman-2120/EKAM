@@ -165,7 +165,9 @@ def test_source_parses_and_normalizes_end_to_end(name: str, registry: SourceRegi
     # 5. nothing a parser produced is lost; OCSF-can't-hold fields land in unmapped
     assert ocsf["unmapped"], f"{name}: unmapped is empty"
     for key in case.ocsf_gap_keys:
-        assert key in ocsf["unmapped"], f"{name}: expected {key!r} in unmapped, got {sorted(ocsf['unmapped'])}"
+        assert key in ocsf["unmapped"], (
+            f"{name}: expected {key!r} in unmapped, got {sorted(ocsf['unmapped'])}"
+        )
 
 
 def test_matched_definition_equals_the_definition_used_to_parse(registry: SourceRegistry) -> None:

@@ -66,7 +66,11 @@ def test_fortigate_traffic_matches_golden(case_id: str, fixture: str) -> None:
 
     # invariants shared by every FortiGate traffic event
     assert record["class_uid"] == 4001 and record["category_uid"] == 4
-    assert record["src_endpoint"] == {"ip": "192.0.2.15", "port": 51234, "interface_name": "internal1"}
+    assert record["src_endpoint"] == {
+        "ip": "192.0.2.15",
+        "port": 51234,
+        "interface_name": "internal1",
+    }
     assert record["dst_endpoint"] == {"ip": "203.0.113.9", "port": 443, "interface_name": "wan1"}
     assert record["connection_info"]["protocol_num"] == 6  # proto=6 is the IANA number
     assert record["connection_info"]["protocol_name"] == "TCP"

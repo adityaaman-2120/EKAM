@@ -99,8 +99,16 @@ def test_action_is_derived_from_a_key_value_log_prefix() -> None:
     reject = _ocsf("iptables_reject.log")
 
     assert (drop["action_id"], drop["action"], drop["disposition"]) == (2, "Denied", "Dropped")
-    assert (accept["action_id"], accept["action"], accept["disposition"]) == (1, "Allowed", "Allowed")
-    assert (reject["action_id"], reject["action"], reject["disposition"]) == (2, "Denied", "Dropped")
+    assert (accept["action_id"], accept["action"], accept["disposition"]) == (
+        1,
+        "Allowed",
+        "Allowed",
+    )
+    assert (reject["action_id"], reject["action"], reject["disposition"]) == (
+        2,
+        "Denied",
+        "Dropped",
+    )
     # the `chain=`/`rule=` prefix tokens become the firewall_rule object
     assert drop["firewall_rule"] == {"uid": "90", "name": "INPUT"}
 

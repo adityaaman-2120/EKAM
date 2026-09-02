@@ -118,9 +118,7 @@ class ParseCoordinator:
         try:
             return dict(engine.parse(payload, options))
         except Exception as exc:  # noqa: BLE001 - every engine failure becomes ParseError
-            reason = (
-                exc.detail.get("reason") if isinstance(exc, UlpfError) else type(exc).__name__
-            )
+            reason = exc.detail.get("reason") if isinstance(exc, UlpfError) else type(exc).__name__
             raise ParseError(
                 "parse engine failed",
                 detail={"format": fmt, "reason": reason or str(exc), "error": str(exc)},

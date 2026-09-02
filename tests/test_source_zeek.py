@@ -55,7 +55,9 @@ def _check_golden(case_id: str, record: dict) -> None:
 
 def _parsed(fixture: str) -> ParsedEvent:
     raw = make_raw_event(_line(fixture).encode("utf-8"), source_id="zeek", transport="file")
-    return ParsedEvent(**raw.model_dump(), format="json", fields=JsonEngine().parse(_line(fixture), {}))
+    return ParsedEvent(
+        **raw.model_dump(), format="json", fields=JsonEngine().parse(_line(fixture), {})
+    )
 
 
 def test_detect_rules_route_each_zeek_log_to_its_own_definition(tmp_path: Path) -> None:
@@ -86,12 +88,16 @@ def test_detect_rules_route_each_zeek_log_to_its_own_definition(tmp_path: Path) 
         ("source_zeek_http", "zeek_http", "zeek_http.jsonl", 4002),
     ],
 )
-def test_zeek_source_matches_golden(case_id: str, source: str, fixture: str, class_uid: int) -> None:
+def test_zeek_source_matches_golden(
+    case_id: str, source: str, fixture: str, class_uid: int
+) -> None:
     record = _ocsf(source, fixture)
     _check_golden(case_id, record)
     assert OcsfValidator(record_metrics=False).validate(record).valid is True
     assert record["class_uid"] == class_uid
-    assert record["src_endpoint"]["ip"] == "192.0.2.15" or record["src_endpoint"]["ip"] == "192.0.2.41"
+    assert (
+        record["src_endpoint"]["ip"] == "192.0.2.15" or record["src_endpoint"]["ip"] == "192.0.2.41"
+    )
 
 
 def test_zeek_conn_state_maps_to_activity_id() -> None:
@@ -99,7 +105,9 @@ def test_zeek_conn_state_maps_to_activity_id() -> None:
     base = _line("zeek_conn.jsonl")
     expected = {"SF": 2, "S0": 4, "REJ": 5, "RSTO": 3, "SH": 4, "OTH": 6, "S1": 1}
     for state, activity_id in expected.items():
-        fields = JsonEngine().parse(base.replace('"conn_state":"SF"', f'"conn_state":"{state}"'), {})
+        fields = JsonEngine().parse(
+            base.replace('"conn_state":"SF"', f'"conn_state":"{state}"'), {}
+        )
         record = finalize(Mapper().to_ocsf(sd, fields, event_uid=_UID, raw_hash=_HASH))
         assert record["activity_id"] == activity_id, state
 
@@ -113,7 +121,11 @@ def test_zeek_conn_keeps_history_in_unmapped() -> None:
 def test_zeek_dns_query_and_rcode() -> None:
     record = _ocsf("zeek_dns", "zeek_dns.jsonl")
     assert record["class_uid"] == 4003 and record["activity_id"] == 2  # Response
-    assert record["query"] == {"hostname": "example.com", "type": "A", "class": "IN"}  # C_INTERNET -> IN
+    assert record["query"] == {
+        "hostname": "example.com",
+        "type": "A",
+        "class": "IN",
+    }  # C_INTERNET -> IN
     assert record["rcode_id"] == 0 and record["rcode"] == "NoError"  # NOERROR -> NoError
     assert record["dst_endpoint"]["port"] == 53
     # answers are arrays of objects in OCSF; the scalar mapper leaves the

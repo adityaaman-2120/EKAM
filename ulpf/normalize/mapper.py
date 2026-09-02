@@ -161,15 +161,11 @@ class Mapper:
         if mode == "keep_all":
             leftovers = {key: value for key, value in fields.items() if key not in consumed}
         else:  # an explicit keep-list
-            leftovers = {
-                key: fields[key] for key in mode if key in fields and key not in consumed
-            }
+            leftovers = {key: fields[key] for key in mode if key in fields and key not in consumed}
         ocsf["unmapped"] = leftovers
 
 
-def _resolve_source(
-    mapping: FieldMapping, fields: MappingABC[str, Any]
-) -> tuple[Any, list[str]]:
+def _resolve_source(mapping: FieldMapping, fields: MappingABC[str, Any]) -> tuple[Any, list[str]]:
     """Return ``(value, consumed_keys)`` for a mapping's ``from`` (``value`` None if absent)."""
     sources = [mapping.from_] if isinstance(mapping.from_, str) else list(mapping.from_)
 

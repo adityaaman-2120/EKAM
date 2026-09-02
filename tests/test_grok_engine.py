@@ -11,9 +11,22 @@ from ulpf.parse.engines.grok_engine import GrokEngine, lint_pattern, load_patter
 from ulpf.parse.registry import registry
 
 _STANDARD_PATTERNS = [
-    "IPV4", "IPV6", "IP", "HOSTNAME", "WORD", "NOTSPACE", "DATA", "GREEDYDATA",
-    "INT", "NUMBER", "LOGLEVEL", "TIMESTAMP_ISO8601", "SYSLOGTIMESTAMP",
-    "USERNAME", "URIPATH", "QUOTEDSTRING",
+    "IPV4",
+    "IPV6",
+    "IP",
+    "HOSTNAME",
+    "WORD",
+    "NOTSPACE",
+    "DATA",
+    "GREEDYDATA",
+    "INT",
+    "NUMBER",
+    "LOGLEVEL",
+    "TIMESTAMP_ISO8601",
+    "SYSLOGTIMESTAMP",
+    "USERNAME",
+    "URIPATH",
+    "QUOTEDSTRING",
 ]
 
 
@@ -62,9 +75,7 @@ def test_syslogtimestamp_and_iso8601_nested_resolution() -> None:
 
 def test_quotedstring_and_loglevel() -> None:
     engine = _engine()
-    assert engine.parse('"hello world"', {"pattern": "%{QUOTEDSTRING:q}"}) == {
-        "q": '"hello world"'
-    }
+    assert engine.parse('"hello world"', {"pattern": "%{QUOTEDSTRING:q}"}) == {"q": '"hello world"'}
     assert engine.parse("WARN", {"pattern": "%{LOGLEVEL:lvl}"})["lvl"] == "WARN"
     assert engine.parse("error", {"pattern": "%{LOGLEVEL:lvl}"})["lvl"] == "error"
 

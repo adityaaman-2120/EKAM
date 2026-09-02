@@ -14,9 +14,7 @@ from ulpf.parse.dsl.loader import SourceRegistry, evaluate_detect
 from ulpf.parse.dsl.schema import DetectRule
 
 
-def _definition(
-    name: str, detect: dict[str, Any], *, priority: int | None = None
-) -> str:
+def _definition(name: str, detect: dict[str, Any], *, priority: int | None = None) -> str:
     body: dict[str, Any] = {
         "name": name,
         "version": "1.0.0",
@@ -53,7 +51,9 @@ def test_evaluate_detect_covers_every_rule_type() -> None:
     fields = {"proto": "6", "action": "deny"}
     assert evaluate_detect(DetectRule.model_validate({"contains": "ASA"}), "%ASA-6-1", fields)
     assert evaluate_detect(DetectRule.model_validate({"starts_with": "<13>"}), "<13>x", fields)
-    assert evaluate_detect(DetectRule.model_validate({"regex": r"ASA-\d-\d+"}), "%ASA-6-302013", fields)
+    assert evaluate_detect(
+        DetectRule.model_validate({"regex": r"ASA-\d-\d+"}), "%ASA-6-302013", fields
+    )
     assert evaluate_detect(
         DetectRule.model_validate({"field_equals": {"name": "proto", "value": 6}}), "x", fields
     )  # "6" == 6 via string fallback
@@ -76,7 +76,7 @@ def test_evaluate_detect_covers_every_rule_type() -> None:
 def test_load_all_and_match_ordered_by_priority(tmp_path: Path) -> None:
     _write(tmp_path, "generic_syslog", {"starts_with": "<"}, priority=200)
     _write(tmp_path, "cisco_asa", {"contains": "%ASA-"}, priority=10)
-    _write(tmp_path, "fortigate", {"contains": "devname=\"FGT"})
+    _write(tmp_path, "fortigate", {"contains": 'devname="FGT'})
 
     registry = SourceRegistry()
     registry.load_all(tmp_path)
@@ -95,7 +95,9 @@ def test_load_all_and_match_ordered_by_priority(tmp_path: Path) -> None:
 
 def test_invalid_file_in_directory_is_skipped_not_fatal(tmp_path: Path, caplog: Any) -> None:
     _write(tmp_path, "good", {"contains": "X"})
-    (tmp_path / "bad.yaml").write_text("name: good\nparse: {}\n", encoding="utf-8")  # missing sections
+    (tmp_path / "bad.yaml").write_text(
+        "name: good\nparse: {}\n", encoding="utf-8"
+    )  # missing sections
 
     registry = SourceRegistry()
     with caplog.at_level(logging.ERROR, logger="ulpf.parse.dsl.loader"):

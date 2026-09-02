@@ -48,7 +48,9 @@ def _ocsf(fields: dict[str, Any], normalize_extra: dict[str, Any], **kw: Any) ->
 
 
 def test_dotted_targets_create_nested_structure() -> None:
-    out = _ocsf({"src_ip": "192.0.2.1"}, {"fields": {"src_endpoint.ip": {"from": "src_ip", "type": "ip"}}})
+    out = _ocsf(
+        {"src_ip": "192.0.2.1"}, {"fields": {"src_endpoint.ip": {"from": "src_ip", "type": "ip"}}}
+    )
     assert out["src_endpoint"] == {"ip": "192.0.2.1"}
     assert out["class_uid"] == 4001
     assert out["category_uid"] == 4
@@ -102,7 +104,11 @@ def test_ip_type_validates() -> None:
 
 def test_timestamp_type_uses_parse_timestamp() -> None:
     fields = {"ts": "2026-08-15 22:14:15"}
-    spec = {"fields": {"time": {"from": "ts", "type": "timestamp", "format": "%Y-%m-%d %H:%M:%S", "tz": "UTC"}}}
+    spec = {
+        "fields": {
+            "time": {"from": "ts", "type": "timestamp", "format": "%Y-%m-%d %H:%M:%S", "tz": "UTC"}
+        }
+    }
     out = _ocsf(fields, spec)
     assert out["time"] == parse_timestamp("2026-08-15 22:14:15", fmt="%Y-%m-%d %H:%M:%S", tz="UTC")
     assert isinstance(out["time"], int)

@@ -50,8 +50,7 @@ def test_kv_line() -> None:
 
 def test_cef_line() -> None:
     _, parsed = _parse(
-        b"CEF:0|Security|threatmanager|1.0|100|worm stopped|10|"
-        b"src=10.0.0.1 dst=2.1.2.2 spt=1232"
+        b"CEF:0|Security|threatmanager|1.0|100|worm stopped|10|src=10.0.0.1 dst=2.1.2.2 spt=1232"
     )
     assert parsed.format == "cef"
     assert parsed.fields["deviceVendor"] == "Security"
@@ -102,8 +101,8 @@ def test_syslog_wrapping_cef_dispatches_to_cef_and_keeps_envelope() -> None:
     )
     assert parsed.format == "cef"
     assert parsed.needs_template_mining is False
-    assert parsed.fields["src"] == "192.0.2.1"          # from the CEF engine
-    assert parsed.fields["envelope.pri"] == 134          # from the syslog envelope
+    assert parsed.fields["src"] == "192.0.2.1"  # from the CEF engine
+    assert parsed.fields["envelope.pri"] == 134  # from the syslog envelope
     assert parsed.fields["envelope.hostname"] == "fw01"
     assert parsed.envelope["facility"] == 16
 

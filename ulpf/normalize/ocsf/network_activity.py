@@ -41,7 +41,13 @@ ACTIVITY_IDS: dict[int, str] = {
     99: "Other",
 }
 ACTION_IDS: dict[int, str] = {0: "Unknown", 1: "Allowed", 2: "Denied", 99: "Other"}
-DIRECTION_IDS: dict[int, str] = {0: "Unknown", 1: "Inbound", 2: "Outbound", 3: "Lateral", 99: "Other"}
+DIRECTION_IDS: dict[int, str] = {
+    0: "Unknown",
+    1: "Inbound",
+    2: "Outbound",
+    3: "Lateral",
+    99: "Other",
+}
 BOUNDARY_IDS: dict[int, str] = {
     0: "Unknown",
     1: "Localhost",

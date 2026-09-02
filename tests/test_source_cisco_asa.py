@@ -38,9 +38,7 @@ def _ocsf(fixture: str) -> dict:
     sd = _definition()
     line = (_HERE / "fixtures" / fixture).read_text(encoding="utf-8").splitlines()[0]
     fields = GrokEngine().parse(line, sd.parse.options)
-    return finalize(
-        Mapper().to_ocsf(sd, fields, event_uid=_UID, raw_hash=_HASH)
-    )
+    return finalize(Mapper().to_ocsf(sd, fields, event_uid=_UID, raw_hash=_HASH))
 
 
 def _check_golden(case_id: str, record: dict) -> None:

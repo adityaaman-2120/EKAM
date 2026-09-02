@@ -86,9 +86,7 @@ class BoundedEventQueue:
         """Whether the queue is at capacity."""
         return self._queue.full()
 
-    async def put_with_backpressure(
-        self, item: Any, timeout: float | None = None
-    ) -> PutOutcome:
+    async def put_with_backpressure(self, item: Any, timeout: float | None = None) -> PutOutcome:
         """Enqueue ``item``, waiting for space instead of dropping it.
 
         Fast path: enqueue immediately if there is room. Otherwise apply

@@ -55,7 +55,9 @@ def _check_golden(case_id: str, record: dict) -> None:
 def _parsed(fixture: str) -> ParsedEvent:
     raw_bytes = _line(fixture).encode("utf-8")
     raw = make_raw_event(raw_bytes, source_id="suricata", transport="file")
-    return ParsedEvent(**raw.model_dump(), format="json", fields=JsonEngine().parse(_line(fixture), {}))
+    return ParsedEvent(
+        **raw.model_dump(), format="json", fields=JsonEngine().parse(_line(fixture), {})
+    )
 
 
 # --------------------------------------------------------------------------

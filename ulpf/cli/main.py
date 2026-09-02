@@ -40,9 +40,8 @@ def _check_python_version() -> None:
             _EXPECTED_PYTHON[1],
         )
 
-app = typer.Typer(
-    help="ULPF — Universal Log Pre-processing Framework.", no_args_is_help=True
-)
+
+app = typer.Typer(help="ULPF — Universal Log Pre-processing Framework.", no_args_is_help=True)
 config_app = typer.Typer(help="Inspect configuration.", no_args_is_help=True)
 app.add_typer(config_app, name="config")
 

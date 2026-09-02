@@ -62,7 +62,14 @@ def test_class_shape_constants() -> None:
     assert "type_uid" in REQUIRED_4001
     for key in ("uid", "direction_id", "protocol_num", "tcp_flags", "boundary"):
         assert key in CONNECTION_INFO_KEYS
-    assert TRAFFIC_KEYS == ("bytes", "bytes_in", "bytes_out", "packets", "packets_in", "packets_out")
+    assert TRAFFIC_KEYS == (
+        "bytes",
+        "bytes_in",
+        "bytes_out",
+        "packets",
+        "packets_in",
+        "packets_out",
+    )
 
 
 def test_new_record_then_finalize_produces_a_well_formed_event() -> None:

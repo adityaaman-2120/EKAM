@@ -83,9 +83,7 @@ async def test_message_split_across_two_reads_newline() -> None:
 
 async def test_body_starting_with_digit_is_not_read_as_length_prefix() -> None:
     # digits followed by a non-space -> ordinary newline-framed content
-    assert await _frames(b"12345-not-a-length prefix here\n") == [
-        b"12345-not-a-length prefix here"
-    ]
+    assert await _frames(b"12345-not-a-length prefix here\n") == [b"12345-not-a-length prefix here"]
     # a message that is only digits + newline
     assert await _frames(b"999999\n") == [b"999999"]
     # octet-counted frame whose body starts with digits

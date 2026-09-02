@@ -105,10 +105,10 @@ def test_missing_trailing_literal_raises() -> None:
     "pattern",
     [
         "no placeholders here",
-        "%{a}%{b} %{c}",   # adjacent placeholders, no delimiter
-        "%{a} %{b}%{c}",   # empty delimiter on a non-last field
-        "%{a",             # unterminated
-        "%{+} %{b}",       # append with no field name
+        "%{a}%{b} %{c}",  # adjacent placeholders, no delimiter
+        "%{a} %{b}%{c}",  # empty delimiter on a non-last field
+        "%{a",  # unterminated
+        "%{+} %{b}",  # append with no field name
     ],
 )
 def test_compile_errors(pattern: str) -> None:

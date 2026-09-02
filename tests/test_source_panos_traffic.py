@@ -89,9 +89,7 @@ def test_panos_traffic_matches_golden(case_id: str, source: str, fixture: str) -
         "src_zone": "trust",
         "dst_zone": "untrust",
     }
-    assert "198.51.100.7" not in json.dumps(
-        {k: v for k, v in record.items() if k != "unmapped"}
-    )
+    assert "198.51.100.7" not in json.dumps({k: v for k, v in record.items() if k != "unmapped"})
 
 
 def test_v10_and_v11_produce_the_same_ocsf_record() -> None:

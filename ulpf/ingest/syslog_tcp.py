@@ -205,7 +205,8 @@ class FramedListenerBase:
                 await self._dispatch(event)
         except IngestError as exc:
             _log.warning(
-                "%s syslog framing error; closing", self.transport,
+                "%s syslog framing error; closing",
+                self.transport,
                 extra={"peer": peer, "err": str(exc)},
             )
         finally:
@@ -219,8 +220,9 @@ class FramedListenerBase:
         try:
             await self._on_event(event)
         except Exception:  # noqa: BLE001 - a bad callback must not kill the connection
-            _log.exception("%s syslog on_event failed", self.transport,
-                           extra={"event_uid": event.event_uid})
+            _log.exception(
+                "%s syslog on_event failed", self.transport, extra={"event_uid": event.event_uid}
+            )
 
 
 class SyslogTcpListener(FramedListenerBase):

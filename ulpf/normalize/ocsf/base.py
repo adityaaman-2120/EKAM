@@ -63,10 +63,27 @@ CLASS_NAMES: dict[int, str] = {
 
 # activity_id -> name, per class (only classes with a non-generic enum listed).
 ACTIVITY_NAMES: dict[int, dict[int, str]] = {
-    4001: {0: "Unknown", 1: "Open", 2: "Close", 3: "Reset", 4: "Fail", 5: "Refuse", 6: "Traffic", 99: "Other"},
+    4001: {
+        0: "Unknown",
+        1: "Open",
+        2: "Close",
+        3: "Reset",
+        4: "Fail",
+        5: "Refuse",
+        6: "Traffic",
+        99: "Other",
+    },
     4002: {
-        0: "Unknown", 1: "Connect", 2: "Delete", 3: "Get", 4: "Head",
-        5: "Options", 6: "Post", 7: "Put", 8: "Trace", 99: "Other",
+        0: "Unknown",
+        1: "Connect",
+        2: "Delete",
+        3: "Get",
+        4: "Head",
+        5: "Options",
+        6: "Post",
+        7: "Put",
+        8: "Trace",
+        99: "Other",
     },
     4003: {0: "Unknown", 1: "Query", 2: "Response", 6: "Traffic", 99: "Other"},
     3002: {0: "Unknown", 1: "Logon", 2: "Logoff", 3: "Authentication Ticket", 99: "Other"},
@@ -149,9 +166,7 @@ def finalize(record: dict[str, Any]) -> dict[str, Any]:
             out["type_uid"] = type_uid(class_uid, activity_id)
             activity_name = ACTIVITY_NAMES.get(class_uid, {}).get(activity_id)
             if class_name is not None:
-                out["type_name"] = (
-                    f"{class_name}: {activity_name}" if activity_name else class_name
-                )
+                out["type_name"] = f"{class_name}: {activity_name}" if activity_name else class_name
 
     category_uid = out.get("category_uid")
     if category_uid in CATEGORIES:
@@ -185,7 +200,12 @@ def check_required(
         if not isinstance(value, dict) or not value:
             problems.append(f"missing required attribute: {attr}")
     metadata = record.get("metadata")
-    if "metadata" in objects and isinstance(metadata, dict) and metadata and not metadata.get("uid"):
+    if (
+        "metadata" in objects
+        and isinstance(metadata, dict)
+        and metadata
+        and not metadata.get("uid")
+    ):
         problems.append("metadata.uid is required")
     return problems
 

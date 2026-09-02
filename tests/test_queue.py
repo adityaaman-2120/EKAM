@@ -42,14 +42,14 @@ async def test_producer_blocks_when_full_and_queue_stays_bounded() -> None:
 
     producer = asyncio.create_task(q.put_with_backpressure(3))
     await asyncio.sleep(0.05)
-    assert not producer.done()          # producer is blocked, not dropped
-    assert q.depth() == 2               # bounded: it did NOT grow to 3
+    assert not producer.done()  # producer is blocked, not dropped
+    assert q.depth() == 2  # bounded: it did NOT grow to 3
     assert len(q) == 2
 
-    assert await q.get() == 1           # free one slot
+    assert await q.get() == 1  # free one slot
     assert await asyncio.wait_for(producer, timeout=1) is PutOutcome.ENQUEUED
     assert q.depth() == 2
-    assert [await q.get() for _ in range(2)] == [2, 3]   # nothing lost, order kept
+    assert [await q.get() for _ in range(2)] == [2, 3]  # nothing lost, order kept
 
 
 async def test_backpressure_metric_only_increments_when_waiting() -> None:
@@ -57,12 +57,12 @@ async def test_backpressure_metric_only_increments_when_waiting() -> None:
     key = "ulpf_queue_backpressure_waits_total"
     before = snapshot().get(key, 0.0)
 
-    await q.put_with_backpressure("first")               # fits immediately
+    await q.put_with_backpressure("first")  # fits immediately
     assert snapshot().get(key, 0.0) == before
 
     producer = asyncio.create_task(q.put_with_backpressure("second"))
     await asyncio.sleep(0.05)
-    assert snapshot()[key] - before == 1.0               # the wait was counted
+    assert snapshot()[key] - before == 1.0  # the wait was counted
 
     await q.get()
     await asyncio.wait_for(producer, timeout=1)
@@ -91,8 +91,8 @@ async def test_dlq_policy_diverts_overflow_without_dropping() -> None:
     outcome = await q.put_with_backpressure("overflow", timeout=0.05)
 
     assert outcome is PutOutcome.DEAD_LETTERED
-    assert diverted == ["overflow"]     # persisted, not discarded
-    assert q.depth() == 1               # capacity never exceeded
+    assert diverted == ["overflow"]  # persisted, not discarded
+    assert q.depth() == 1  # capacity never exceeded
     assert snapshot()[dl_key] - before == 1.0
 
 

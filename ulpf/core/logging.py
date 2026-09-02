@@ -16,10 +16,29 @@ from datetime import UTC, datetime
 # LogRecord attributes that are framework internals, not caller-supplied extras.
 _RESERVED: frozenset[str] = frozenset(
     {
-        "name", "msg", "args", "levelname", "levelno", "pathname", "filename",
-        "module", "exc_info", "exc_text", "stack_info", "lineno", "funcName",
-        "created", "msecs", "relativeCreated", "thread", "threadName",
-        "processName", "process", "taskName", "message", "asctime",
+        "name",
+        "msg",
+        "args",
+        "levelname",
+        "levelno",
+        "pathname",
+        "filename",
+        "module",
+        "exc_info",
+        "exc_text",
+        "stack_info",
+        "lineno",
+        "funcName",
+        "created",
+        "msecs",
+        "relativeCreated",
+        "thread",
+        "threadName",
+        "processName",
+        "process",
+        "taskName",
+        "message",
+        "asctime",
     }
 )
 
