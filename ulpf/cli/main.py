@@ -7,6 +7,8 @@ Commands:
 * ``ulpf config show``    — print the effective merged configuration.
 * ``ulpf inspect``        — trace one raw log line through the whole pipeline.
 * ``ulpf sources verify`` — check every source definition against a sample line.
+* ``ulpf keys generate``  — write an Ed25519 signing keypair as PEM.
+* ``ulpf verify …``       — prove ledger integrity and the lossless round-trip.
 """
 
 from __future__ import annotations
@@ -23,7 +25,9 @@ import yaml
 
 from ulpf import __version__ as _FALLBACK_VERSION
 from ulpf.cli.inspect import inspect as _inspect_command
+from ulpf.cli.keys import keys_app
 from ulpf.cli.sources import sources_app
+from ulpf.cli.verify import verify_app
 from ulpf.config.settings import Settings, get_settings
 from ulpf.core.logging import configure_logging
 from ulpf.core.runtime import Runtime
@@ -51,6 +55,8 @@ app.add_typer(config_app, name="config")
 
 app.command("inspect")(_inspect_command)
 app.add_typer(sources_app, name="sources")
+app.add_typer(keys_app, name="keys")
+app.add_typer(verify_app, name="verify")
 
 
 def _resolve_version() -> str:

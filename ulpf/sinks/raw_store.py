@@ -126,6 +126,29 @@ class RawStore:
         for record in self._scan_records(date_str):
             yield self._record_to_event(record)
 
+    def iter_located(
+        self, date: str | dt.date | None = None
+    ) -> Iterator[tuple[RawEvent, str]]:
+        """Yield ``(event, locator)`` for every stored event.
+
+        ``locator`` is ``"date=YYYY-MM-DD/events.ndjson.gz#L<n>"`` — the partition
+        file and the 0-based record index within it, so a failure can be pointed
+        at exactly.
+        """
+        self.flush()
+        date_str = date.isoformat() if isinstance(date, dt.date) else date
+        for partition in sorted(self._bronze.glob(_PARTITION_GLOB)):
+            if not partition.is_dir():
+                continue
+            if date_str is not None and partition.name != f"date={date_str}":
+                continue
+            path = partition / _PARTITION_FILE
+            if not path.exists():
+                continue
+            for line_no, record in enumerate(self._read_lines(path)):
+                locator = f"{partition.name}/{_PARTITION_FILE}#L{line_no}"
+                yield self._record_to_event(record), locator
+
     def verify(self, event_uid: str) -> bool:
         """Re-read the stored event, re-hash its raw bytes, compare to ``raw_hash``.
 

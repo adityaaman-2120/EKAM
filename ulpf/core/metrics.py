@@ -76,6 +76,15 @@ ENRICH_LATENCY = Histogram(
     "Wall-clock time spent in a single enricher for one event (timeouts included).",
     ["enricher"],
 )
+INTEGRITY_BATCHES_SEALED = Counter(
+    "ulpf_integrity_batches_sealed_total",
+    "Batches of raw-event hashes sealed into the signed integrity ledger.",
+    ["trigger"],
+)
+INTEGRITY_BATCH_SEAL_SECONDS = Histogram(
+    "ulpf_integrity_batch_seal_seconds",
+    "Wall-clock time to seal one batch (Merkle root + ledger append + index write).",
+)
 
 _ALL_METRICS = (
     EVENTS_RECEIVED,
@@ -91,6 +100,8 @@ _ALL_METRICS = (
     END_TO_END_LATENCY,
     NORMALIZATION_COMPLETENESS,
     ENRICH_LATENCY,
+    INTEGRITY_BATCHES_SEALED,
+    INTEGRITY_BATCH_SEAL_SECONDS,
 )
 
 

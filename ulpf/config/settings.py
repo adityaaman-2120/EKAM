@@ -54,11 +54,21 @@ class ParseSettings(BaseModel):
 
 
 class IntegritySettings(BaseModel):
-    """Cryptographic integrity (hash chain / Merkle) batching controls."""
+    """Cryptographic integrity (hash chain / Merkle) batching controls.
+
+    A batch of raw-event hashes is sealed into the signed ledger when it reaches
+    ``batch_size`` events **or** ``batch_timeout_seconds`` elapse, whichever
+    comes first. ``signing_key_path`` is the Ed25519 private key
+    (``ulpf keys generate``); with no key the integrity stage self-disables.
+    """
 
     enabled: bool = True
     batch_size: int = 1000
-    batch_timeout_seconds: int = 10
+    batch_timeout_seconds: float = 10.0
+    signing_key_path: Path | None = None
+    # Public key for `ulpf verify` (an auditor need not hold the private key).
+    # Falls back to the public half of signing_key_path when unset.
+    public_key_path: Path | None = None
 
 
 class EnrichSettings(BaseModel):

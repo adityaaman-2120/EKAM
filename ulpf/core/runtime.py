@@ -1,12 +1,14 @@
 """Runtime assembly: the pipeline plus every configured listener, run as one unit.
 
 ``Runtime`` is the object ``ulpf run`` drives. It builds a single
-:class:`~ulpf.core.pipeline.Pipeline` (``RawStoreStage`` -> ``ParseStage`` ->
-``NormalizeStage`` -> ``EnrichStage`` -> ``ValidateStage``), points every
-listener's ``on_event`` at :meth:`Pipeline.submit`, and manages orderly startup
-and shutdown. The enricher chain (network context, GeoIP, threat intel, ATT&CK
-tagging) is assembled from ``settings.enrich`` and its per-enricher status is
-served on the intake app's ``GET /health``.
+:class:`~ulpf.core.pipeline.Pipeline` (``RawStoreStage`` -> ``IntegrityStage`` ->
+``ParseStage`` -> ``NormalizeStage`` -> ``EnrichStage`` -> ``ValidateStage``),
+points every listener's ``on_event`` at :meth:`Pipeline.submit`, and manages
+orderly startup and shutdown. ``IntegrityStage`` sits right after the raw-store
+write so the signed Merkle ledger covers the untouched evidence. The enricher
+chain (network context, GeoIP, threat intel, ATT&CK tagging) is assembled from
+``settings.enrich`` and its per-enricher status is served on the intake app's
+``GET /health``.
 
 * **start**  — pipeline workers, then the syslog UDP/TCP listeners, the syslog
   TLS listener (only if ``tls.cert_path``/``key_path`` are set), a file tailer
@@ -39,6 +41,8 @@ from ulpf.ingest.http_intake import create_intake_app
 from ulpf.ingest.syslog_tcp import SyslogTcpListener
 from ulpf.ingest.syslog_tls import SyslogTlsListener
 from ulpf.ingest.syslog_udp import SyslogUdpListener
+from ulpf.integrity.signing import Signer
+from ulpf.integrity.stage import IntegrityStage
 from ulpf.normalize.stage import NormalizeStage, ValidateStage
 from ulpf.parse.coordinator import ParseCoordinator
 from ulpf.parse.dsl.loader import SourceRegistry
@@ -59,6 +63,22 @@ class _NoSignalServer(uvicorn.Server):
         return None
 
 
+def _load_signing_key(settings: Settings) -> Signer | None:
+    """Load the integrity-ledger signing key, or ``None`` (integrity self-disables)."""
+    integrity = settings.integrity
+    if not integrity.enabled:
+        return None
+    key_path = integrity.signing_key_path
+    if key_path is None or not key_path.is_file():
+        _log.warning(
+            "integrity.enabled but no signing key at %s; the integrity ledger is OFF "
+            "(run `ulpf keys generate` and set integrity.signing_key_path)",
+            key_path,
+        )
+        return None
+    return Signer.load(key_path)
+
+
 class Runtime:
     """Owns the pipeline and all listeners for a single ULPF process."""
 
@@ -73,10 +93,13 @@ class Runtime:
         self._sources.load_all(sources_dir)
         self._enrichers = build_enrichers(settings)
         self._enrich = EnrichmentPipeline(settings, self._enrichers)
+        self._integrity = IntegrityStage(settings, signer=_load_signing_key(settings))
         self._pipeline = Pipeline(
             settings,
             [
                 RawStoreStage(self._raw_store),
+                # integrity covers the RAW evidence, before parsing can alter it
+                self._integrity,
                 ParseStage(settings, self._coordinator),
                 NormalizeStage(settings, self._sources),
                 EnrichStage(settings, self._enrich),
