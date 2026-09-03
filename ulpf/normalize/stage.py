@@ -164,9 +164,7 @@ class ValidateStage:
             return event
 
         definition = self._registry.get(event.source_type)
-        on_failure = (
-            definition.validation.on_failure if definition is not None else "dead_letter"
-        )
+        on_failure = definition.validation.on_failure if definition is not None else "dead_letter"
         if on_failure == "dead_letter":
             self._dlq.write(
                 _raw_stub(event),

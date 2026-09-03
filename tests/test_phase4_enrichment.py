@@ -19,7 +19,6 @@ from ulpf.enrich.pipeline import EnrichmentPipeline
 from ulpf.enrich.stage import EnrichStage
 from ulpf.enrich.threat_intel import IndicatorStore, ThreatIntelEnricher
 from ulpf.integrity.hashing import make_raw_event
-from ulpf.normalize.ocsf.base import finalize
 from ulpf.normalize.stage import NormalizeStage, ValidateStage
 from ulpf.normalize.validator import OcsfValidator
 from ulpf.parse.dsl.loader import SourceRegistry
@@ -34,7 +33,7 @@ _CONFIGS = Path(__file__).parent.parent / "configs"
 _FORTI_LINE = (
     b'<189>date=2026-08-15 time=22:14:15 level="warning" devname="FGT60F" '
     b'devid="FGT60FTK20000001" logid="0000000013" type="traffic" subtype="forward" '
-    b"vd=\"root\" srcip=10.10.20.5 srcport=51111 srcintf=\"internal1\" "
+    b'vd="root" srcip=10.10.20.5 srcport=51111 srcintf="internal1" '
     b'dstip=8.8.8.8 dstport=3389 dstintf="wan1" sessionid=104512 proto=6 '
     b'service="RDP" action="deny" policyid=9 sentbyte=0 rcvdbyte=0 sentpkt=1 rcvdpkt=0'
 )
@@ -91,7 +90,10 @@ async def test_fortigate_deny_event_is_normalized_enriched_and_validated(tmp_pat
     enrich = EnrichmentPipeline(settings, enrichers)
     try:
         normalized = await NormalizeStage(settings, registry).process(_parsed(tmp_path))
-        assert isinstance(normalized, NormalizedEvent) and normalized.source_type == "fortigate_traffic"
+        assert (
+            isinstance(normalized, NormalizedEvent)
+            and normalized.source_type == "fortigate_traffic"
+        )
 
         enriched = await EnrichStage(settings, enrich).process(normalized)
         validated = await ValidateStage(settings, registry).process(enriched)

@@ -64,9 +64,10 @@ def test_brute_force_on_ssh_and_rdp() -> None:
 
 
 def test_allowed_traffic_to_22_is_not_brute_force() -> None:
-    assert _tagger().enrich(
-        {"class_uid": 4001, "action": "Allowed", "dst_endpoint": {"port": 22}}
-    ) == {}
+    assert (
+        _tagger().enrich({"class_uid": 4001, "action": "Allowed", "dst_endpoint": {"port": 22}})
+        == {}
+    )
 
 
 def test_port_scan_from_suricata_signature_and_category() -> None:
@@ -83,9 +84,7 @@ def test_port_scan_from_suricata_signature_and_category() -> None:
 
 
 def test_c2_over_uncommon_port() -> None:
-    out = _tagger().enrich(
-        {"class_uid": 4001, "action": "Allowed", "dst_endpoint": {"port": 4444}}
-    )
+    out = _tagger().enrich({"class_uid": 4001, "action": "Allowed", "dst_endpoint": {"port": 4444}})
     assert out["attack"]["technique_ids"] == ["T1571"]
     assert out["attack"]["technique_names"] == ["Non-Standard Port"]
     assert out["attack"]["tactics"] == ["command-and-control"]
@@ -153,9 +152,7 @@ def test_alert_category_from_unmapped_is_also_consulted() -> None:
 
 
 def test_unknown_technique_id_falls_back_to_the_id_as_its_name() -> None:
-    amap = _map_from(
-        [{"id": "custom", "technique_ids": ["T9999"], "when": {"class_uid": 4001}}]
-    )
+    amap = _map_from([{"id": "custom", "technique_ids": ["T9999"], "when": {"class_uid": 4001}}])
     out = AttackTagger(amap).enrich({"class_uid": 4001})
     assert out["attack"] == {
         "technique_ids": ["T9999"],
@@ -221,7 +218,9 @@ def test_from_settings_with_missing_file_is_a_noop(
         tagger = AttackTagger.from_settings(
             Settings(enrich=EnrichSettings(attack_map_path=tmp_path / "absent.yaml"))
         )
-    assert tagger.enrich({"class_uid": 4001, "action": "Denied", "dst_endpoint": {"port": 22}}) == {}
+    assert (
+        tagger.enrich({"class_uid": 4001, "action": "Denied", "dst_endpoint": {"port": 22}}) == {}
+    )
     assert any("not found" in r.message for r in caplog.records)
 
 

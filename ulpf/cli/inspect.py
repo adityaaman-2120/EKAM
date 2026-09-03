@@ -11,10 +11,15 @@ and prints, stage by stage, exactly what ULPF would do with it:
    explaining why the line did not reach a normalized record.
 4. **PARSED** — the flat field dict the parse engine produced.
 5. **NORMALIZED** — the finalized OCSF record, pretty-printed.
-6. **VALIDATION** — ``valid`` true/false, any errors, and the completeness KPI
+6. **ENRICHMENT** — runs the *live* enrichment chain (network context, GeoIP,
+   threat intel, ATT&CK) over the normalized record: which enrichers produced
+   output, which are disabled and why, per-enricher latency, and the merged
+   ``enrichments`` dict. Comes between NORMALIZED and VALIDATION, as in the
+   real pipeline.
+7. **VALIDATION** — ``valid`` true/false, any errors, and the completeness KPI
    as a percentage.
-7. **UNMAPPED** — the keys parked in ``ocsf["unmapped"]`` and their count.
-8. **CROSSWALK** — the ECS document and CIM field set (only with ``--crosswalk``).
+8. **UNMAPPED** — the keys parked in ``ocsf["unmapped"]`` and their count.
+9. **CROSSWALK** — the ECS document and CIM field set (only with ``--crosswalk``).
 
 ``--json`` emits the whole report as JSON (one object per line); ``--quiet``
 prints only the OCSF record. Colour: green for a valid record, red for
@@ -23,7 +28,11 @@ validation errors, yellow for unmapped keys.
 
 from __future__ import annotations
 
+import contextlib
 import json as _json
+import logging
+import time
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -33,10 +42,12 @@ from rich.json import JSON
 from rich.panel import Panel
 from rich.table import Table
 
-from ulpf.config.settings import get_settings
+from ulpf.config.settings import Settings, get_settings
 from ulpf.core.errors import ParseError, UlpfError
 from ulpf.core.models import RawEvent
 from ulpf.detect.sniffer import sniff_layered
+from ulpf.enrich.factory import ENRICHER_ORDER, build_enrichers
+from ulpf.enrich.stage import promote_enrichments
 from ulpf.integrity.hashing import make_raw_event
 from ulpf.normalize.crosswalk.cim import to_cim
 from ulpf.normalize.crosswalk.ecs import to_ecs
@@ -109,12 +120,17 @@ def build_report(raw: bytes, registry: SourceRegistry, *, with_crosswalk: bool) 
         fields, field_error = _definition_fields(event, definition)
 
     ocsf, norm_error = _normalize(definition, fields, event, parseable=parse_error is None)
+    # Run the live enrichment chain over ``ocsf`` (mutates it, exactly like the
+    # pipeline's EnrichStage) so NORMALIZED and VALIDATION reflect the enriched
+    # record — enrichment happens between normalize and validate.
+    enrichment = _enrichment_section(ocsf, _enrich_settings())
     report: dict[str, Any] = {
         "raw": _raw_section(event, text, bom_stripped=bom_stripped),
         "sniff": {"outer": outer, "inner": inner},
         "match": _match_section(definition, inner, fields, field_error or norm_error),
         "parsed": fields if parse_error is None or definition is not None else None,
         "normalized": ocsf,
+        "enrichment": enrichment,
         "validation": _validation_section(definition, ocsf, norm_error),
         "unmapped": _unmapped_section(ocsf),
     }
@@ -193,6 +209,143 @@ def _normalize(
         "metadata": {"uid": event.event_uid, "log_hash": event.raw_hash},
         "unmapped": dict(fields),
     }, None
+
+
+# --------------------------------------------------------------------------
+# enrichment (the live chain — same enrichers, order, merge and promotion as
+# ``ulpf.enrich.stage.EnrichStage``; the hot-path thread-pool timeout wrapper is
+# skipped since inspect is not the hot path)
+
+
+def _enrich_settings() -> Settings:
+    """Settings with the enrichment config paths resolved to absolute (like --sources)."""
+    settings = get_settings()
+    enrich = settings.enrich
+    updates: dict[str, Any] = {
+        "assets_path": _resolve_repo_path(enrich.assets_path),
+        "attack_map_path": _resolve_repo_path(enrich.attack_map_path),
+        "ioc_dir": _resolve_repo_path(enrich.ioc_dir),
+    }
+    for attr in ("geoip_db_path", "geoip_asn_db_path"):
+        value = getattr(enrich, attr)
+        if value is not None:
+            updates[attr] = _resolve_repo_path(value)
+    return settings.model_copy(update={"enrich": enrich.model_copy(update=updates)})
+
+
+def _resolve_repo_path(path: Path) -> Path:
+    """Resolve a config-relative path against the CWD, then the repo root."""
+    if path.is_absolute():
+        return path
+    for base in (Path.cwd(), _REPO_ROOT):
+        if (base / path).exists():
+            return base / path
+    return _REPO_ROOT / path
+
+
+@contextlib.contextmanager
+def _quiet_enrich_logs() -> Iterator[None]:
+    """Silence the enrichers' operational WARNINGs (e.g. 'geoip disabled').
+
+    ``inspect`` reports every enricher's status inside the ENRICHMENT panel, so
+    those log lines would only clutter the top of the output.
+    """
+    log = logging.getLogger("ulpf.enrich")
+    prior = log.level
+    log.setLevel(logging.ERROR)
+    try:
+        yield
+    finally:
+        log.setLevel(prior)
+
+
+def _enrichment_section(ocsf: dict[str, Any] | None, settings: Settings) -> dict[str, Any]:
+    """Run every enricher over ``ocsf`` (mutated in place); return the ENRICHMENT data."""
+    if not isinstance(ocsf, dict) or "class_uid" not in ocsf:
+        return {
+            "ran": False,
+            "reason": "no OCSF record to enrich",
+            "enrichers": [],
+            "enrichments": {},
+        }
+
+    master_on = settings.enrich.enabled
+    rows: list[dict[str, Any]] = []
+    merged: dict[str, Any] = dict(ocsf.get("enrichments") or {})
+    with _quiet_enrich_logs():
+        chain = build_enrichers(settings) if master_on else []
+        built = {getattr(e, "name", ""): e for e in chain}
+        for name in ENRICHER_ORDER:
+            row = _run_enricher(name, built.get(name), ocsf, settings, master_on=master_on)
+            rows.append(row)
+            if row["output"]:
+                merged.update(row["output"])
+    if merged:
+        ocsf["enrichments"] = merged
+        promote_enrichments(ocsf, merged)
+    return {
+        "ran": master_on,
+        "reason": None if master_on else "settings.enrich.enabled is false",
+        "enrichers": rows,
+        "enrichments": merged,
+    }
+
+
+def _run_enricher(
+    name: str, enricher: Any, ocsf: dict[str, Any], settings: Settings, *, master_on: bool
+) -> dict[str, Any]:
+    """Time one enricher and classify it: produced / no_match / disabled / error."""
+    base: dict[str, Any] = {"name": name, "status": "disabled", "reason": None}
+    base |= {"latency_ms": 0.0, "output": {}}
+    if not master_on:
+        return {**base, "reason": "settings.enrich.enabled is false"}
+    if not getattr(settings.enrich, name, False) or enricher is None:
+        return {**base, "reason": f"settings.enrich.{name} is false"}
+    self_disabled = _self_disabled_reason(name, enricher, settings)
+    if self_disabled is not None:
+        return {**base, "reason": self_disabled}
+
+    start = time.perf_counter()
+    try:
+        out = enricher.enrich(dict(ocsf))
+    except Exception as exc:  # noqa: BLE001 - a bad enricher must never break inspect
+        return {
+            **base,
+            "status": "error",
+            "reason": f"{type(exc).__name__}: {exc}",
+            "latency_ms": round((time.perf_counter() - start) * 1000, 3),
+        }
+    latency_ms = round((time.perf_counter() - start) * 1000, 3)
+    out = out if isinstance(out, dict) else {}
+    status, note = ("produced", None) if out else ("no_match", _readiness_note(enricher))
+    return {
+        "name": name,
+        "status": status,
+        "reason": note,
+        "latency_ms": latency_ms,
+        "output": out,
+    }
+
+
+def _self_disabled_reason(name: str, enricher: Any, settings: Settings) -> str | None:
+    """Why an *enabled* enricher has self-disabled (currently only GeoIP, no database)."""
+    if name == "geoip" and getattr(enricher, "enabled", True) is False:
+        path = settings.enrich.geoip_db_path
+        if path is None:
+            return (
+                "no database configured (settings.enrich.geoip_db_path is null; "
+                "see deploy/data/README.md)"
+            )
+        return f"no database at {path}"
+    return None
+
+
+def _readiness_note(enricher: Any) -> str | None:
+    """The enricher's own 'why nothing can match' detail when it isn't ready."""
+    if not hasattr(enricher, "describe"):
+        return None
+    info: dict[str, Any] = enricher.describe()
+    return info.get("detail") if info.get("ready") is False else None
 
 
 # --------------------------------------------------------------------------
@@ -339,7 +492,7 @@ def _validation_panel(validation: dict[str, Any] | None) -> Panel:
     if validation is None:
         return Panel(
             "[dim]not validated (no OCSF class assigned)[/]",
-            title="6 . VALIDATION",
+            title="7 . VALIDATION",
             border_style="yellow",
         )
     head = "[green]valid: true[/]" if validation["valid"] else "[red]valid: false[/]"
@@ -348,7 +501,7 @@ def _validation_panel(validation: dict[str, Any] | None) -> Panel:
     lines += [f"[yellow]warn:[/] {warn}" for warn in validation["warnings"]]
     return Panel(
         "\n".join(lines),
-        title="6 . VALIDATION",
+        title="7 . VALIDATION",
         border_style="green" if validation["valid"] else "red",
     )
 
@@ -356,16 +509,75 @@ def _validation_panel(validation: dict[str, Any] | None) -> Panel:
 def _unmapped_panel(unmapped: dict[str, Any]) -> Panel:
     """Render section 7 (UNMAPPED), yellow whenever any key is unmapped."""
     if unmapped["count"] == 0:
-        return Panel("[green]0 unmapped keys[/]", title="7 . UNMAPPED", border_style="green")
+        return Panel("[green]0 unmapped keys[/]", title="8 . UNMAPPED", border_style="green")
     body = f"[yellow]{unmapped['count']} unmapped key(s)[/]\n" + ", ".join(unmapped["keys"])
-    return Panel(body, title="7 . UNMAPPED", border_style="yellow")
+    return Panel(body, title="8 . UNMAPPED", border_style="yellow")
+
+
+_ENRICH_STATUS_STYLE = {
+    "produced": "green",
+    "no_match": "dim",
+    "disabled": "yellow",
+    "error": "red",
+}
+
+
+def _enrichment_output_keys(output: dict[str, Any], *, limit: int = 4) -> str:
+    """A compact hint at what an enricher produced (its namespace's inner keys)."""
+    inner = next(iter(output.values())) if len(output) == 1 else output
+    keys = sorted(inner) if isinstance(inner, dict) else sorted(output)
+    shown = ", ".join(keys[:limit])
+    return f"{shown}, +{len(keys) - limit} more" if len(keys) > limit else shown
+
+
+def _enrichment_row_line(row: dict[str, Any]) -> str:
+    """One coloured line describing a single enricher's outcome."""
+    style = _ENRICH_STATUS_STYLE.get(row["status"], "dim")
+    name = f"[{style}]{row['name']:<15}[/]"
+    latency = f"[dim]{row['latency_ms']:.3f} ms[/]"
+    if row["status"] == "produced":
+        keys = _enrichment_output_keys(row["output"])
+        return f"{name} [green]produced[/]  [dim]{keys}[/]  {latency}"
+    if row["status"] == "disabled":
+        return f"{name} [yellow]disabled[/]: {row['reason']}"
+    if row["status"] == "error":
+        return f"{name} [red]error[/]: {row['reason']}  {latency}"
+    tail = f" [dim]({row['reason']})[/]" if row["reason"] else ""
+    return f"{name} [dim]enabled, no match[/]{tail}  {latency}"
+
+
+def _enrichment_panel(enrichment: dict[str, Any]) -> Panel:
+    """Render section 8 (ENRICHMENT): per-enricher status + latency + merged output."""
+    rows = enrichment["enrichers"]
+    if not rows:
+        return Panel(
+            f"[dim]not run — {enrichment['reason']}[/]",
+            title="6 . ENRICHMENT",
+            border_style="yellow",
+        )
+    grid = Table.grid(padding=(0, 0))
+    grid.add_column()
+    grid.add_row("\n".join(_enrichment_row_line(row) for row in rows))
+    grid.add_row("")
+    grid.add_row(
+        _json_block(enrichment["enrichments"])
+        if enrichment["enrichments"]
+        else "[dim]merged enrichments: {} (nothing produced)[/]"
+    )
+    if any(r["status"] == "error" for r in rows):
+        border = "red"
+    elif any(r["status"] == "produced" for r in rows):
+        border = "green"
+    else:
+        border = "yellow"
+    return Panel(grid, title="6 . ENRICHMENT", border_style=border)
 
 
 def _crosswalk_panel(crosswalk: dict[str, Any] | None) -> Panel:
-    """Render section 8 (CROSSWALK): the ECS document and CIM field set."""
+    """Render section 9 (CROSSWALK): the ECS document and CIM field set."""
     if not crosswalk:
         return Panel(
-            "[dim]no crosswalk (no OCSF record)[/]", title="8 . CROSSWALK", border_style="cyan"
+            "[dim]no crosswalk (no OCSF record)[/]", title="9 . CROSSWALK", border_style="cyan"
         )
     grid = Table.grid(padding=(0, 2))
     grid.add_column()
@@ -373,7 +585,7 @@ def _crosswalk_panel(crosswalk: dict[str, Any] | None) -> Panel:
     grid.add_row(_json_block(crosswalk["ecs"]))
     grid.add_row("[bold]CIM[/]")
     grid.add_row(_json_block(crosswalk["cim"]))
-    return Panel(grid, title="8 . CROSSWALK", border_style="cyan")
+    return Panel(grid, title="9 . CROSSWALK", border_style="cyan")
 
 
 def _sniff_panel(sniff: dict[str, str], *, matched: bool) -> Panel:
@@ -401,6 +613,7 @@ def _render(console: Console, report: dict[str, Any], *, with_crosswalk: bool) -
     console.print(_match_panel(report["match"]))
     console.print(_parsed_panel(report["parsed"]))
     console.print(_normalized_panel(report["normalized"]))
+    console.print(_enrichment_panel(report["enrichment"]))
     console.print(_validation_panel(report["validation"]))
     console.print(_unmapped_panel(report["unmapped"]))
     if with_crosswalk:
@@ -432,7 +645,7 @@ def inspect(
         False, "--crosswalk", help="Also show the ECS and CIM projections."
     ),
 ) -> None:
-    """Trace raw log line(s) through detect, parse, match, normalize and validate."""
+    """Trace raw log line(s) through detect, parse, match, normalize, enrich, validate."""
     if (line is None) == (file is None):
         raise typer.BadParameter("provide exactly one of --line or --file")
     if as_json and quiet:

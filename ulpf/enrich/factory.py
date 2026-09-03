@@ -31,16 +31,15 @@ _BUILDERS: tuple[tuple[str, Any], ...] = (
     ("attack_tagger", AttackTagger.from_settings),
 )
 
+#: Enricher names in execution order — the order the chain runs.
+ENRICHER_ORDER: tuple[str, ...] = tuple(attr for attr, _ in _BUILDERS)
+
 
 def build_enrichers(settings: Settings) -> list[Enricher]:
     """Return the configured enricher chain (empty when enrichment is disabled)."""
     if not settings.enrich.enabled:
         return []
-    return [
-        build(settings)
-        for attr, build in _BUILDERS
-        if getattr(settings.enrich, attr, False)
-    ]
+    return [build(settings) for attr, build in _BUILDERS if getattr(settings.enrich, attr, False)]
 
 
 def build_enrichment_pipeline(
@@ -50,9 +49,7 @@ def build_enrichment_pipeline(
     return EnrichmentPipeline(settings, enrichers or build_enrichers(settings))
 
 
-def describe_enrichers(
-    settings: Settings, enrichers: list[Enricher]
-) -> list[dict[str, Any]]:
+def describe_enrichers(settings: Settings, enrichers: list[Enricher]) -> list[dict[str, Any]]:
     """A per-enricher status list for the /health endpoint.
 
     Each entry: ``{"name", "enabled", "ready", "detail"}``. ``enabled`` reflects

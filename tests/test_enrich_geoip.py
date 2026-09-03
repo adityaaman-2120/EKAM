@@ -71,9 +71,7 @@ def test_from_settings_with_missing_file_self_disables(
 ) -> None:
     missing = tmp_path / "GeoLite2-City.mmdb"
     with caplog.at_level(logging.WARNING, logger="ulpf.enrich.geoip"):
-        enr = GeoIpEnricher.from_settings(
-            Settings(enrich=EnrichSettings(geoip_db_path=missing))
-        )
+        enr = GeoIpEnricher.from_settings(Settings(enrich=EnrichSettings(geoip_db_path=missing)))
     assert enr.enabled is False
     assert enr.enrich(_record()) == {}
     assert any(str(missing) in r.message and "WITHOUT" in r.message for r in caplog.records)
@@ -133,9 +131,9 @@ def test_asn_fields_added_when_an_asn_reader_is_present() -> None:
 
 
 def test_no_asn_reader_means_no_asn_fields() -> None:
-    fields = GeoIpEnricher(_FakeReader({"8.8.8.8": _GOOGLE_CITY})).enrich(
-        _record(dst="8.8.8.8")
-    )["geoip"]["8.8.8.8"]
+    fields = GeoIpEnricher(_FakeReader({"8.8.8.8": _GOOGLE_CITY})).enrich(_record(dst="8.8.8.8"))[
+        "geoip"
+    ]["8.8.8.8"]
     assert "asn" not in fields and "asn_org" not in fields
 
 
@@ -194,9 +192,7 @@ def test_runs_end_to_end_through_the_enrichment_pipeline() -> None:
     reason="deploy/data/GeoLite2-City.mmdb not present (optional, licence-restricted)",
 )
 def test_real_geolite2_city_database_resolves_a_public_ip() -> None:
-    enr = GeoIpEnricher.from_settings(
-        Settings(enrich=EnrichSettings(geoip_db_path=_REAL_CITY_DB))
-    )
+    enr = GeoIpEnricher.from_settings(Settings(enrich=EnrichSettings(geoip_db_path=_REAL_CITY_DB)))
     assert enr.enabled is True
     fields = enr.enrich(_record(src="10.0.0.1", dst="8.8.8.8")).get("geoip", {}).get("8.8.8.8")
     assert fields and fields.get("country_code")

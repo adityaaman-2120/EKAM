@@ -10,8 +10,6 @@ import threading
 import time
 from typing import Any
 
-import pytest
-
 from ulpf.config.settings import EnrichSettings, Settings
 from ulpf.core.metrics import snapshot
 from ulpf.enrich.pipeline import EnrichmentPipeline
@@ -72,7 +70,9 @@ class BadReturnEnricher:
 
 def test_enrichers_run_in_order_and_merge_under_enrichments() -> None:
     record = {"class_uid": 4001, "src_endpoint": {"ip": "203.0.113.9"}}
-    with EnrichmentPipeline(_settings(), [GeoEnricher(), TagEnricher(**{"asset.owner": "netops"})]) as p:
+    with EnrichmentPipeline(
+        _settings(), [GeoEnricher(), TagEnricher(**{"asset.owner": "netops"})]
+    ) as p:
         out = p.enrich(record)
 
     assert out["enrichments"] == {

@@ -80,7 +80,9 @@ def test_exact_ip_indicator_matches(tmp_path: Path) -> None:
 
 def test_no_match_returns_empty(tmp_path: Path) -> None:
     _write(tmp_path, "ips.json", _ioc("ip", ["192.0.2.66"]))
-    assert ThreatIntelEnricher(_store(tmp_path)).enrich(_record(src="10.0.0.1", dst="10.0.0.2")) == {}
+    assert (
+        ThreatIntelEnricher(_store(tmp_path)).enrich(_record(src="10.0.0.1", dst="10.0.0.2")) == {}
+    )
 
 
 def test_cidr_indicator_matches_via_trie(tmp_path: Path) -> None:
@@ -118,7 +120,10 @@ def test_hash_indicator_matches_case_insensitively_and_in_fingerprints(tmp_path:
 
     by_key = enr.enrich({"class_uid": 4001, "file": {"sha256": digest.lower()}})
     by_fp = enr.enrich(
-        {"class_uid": 4001, "file": {"fingerprints": [{"algorithm": "sha256", "value": digest.lower()}]}}
+        {
+            "class_uid": 4001,
+            "file": {"fingerprints": [{"algorithm": "sha256", "value": digest.lower()}]},
+        }
     )
     assert by_key["threat_intel"]["ioc_type"] == "hash"
     assert by_key["threat_intel"]["matched_on"] == "file.sha256"
@@ -129,7 +134,10 @@ def test_ip_is_checked_before_hash(tmp_path: Path) -> None:
     _write(tmp_path, "ips.json", _ioc("ip", ["192.0.2.66"], source="ip-feed"))
     _write(tmp_path, "h.json", _ioc("hash", ["deadbeef"], source="hash-feed"))
     record = _record(dst="192.0.2.66", file={"hash": "deadbeef"})
-    assert ThreatIntelEnricher(_store(tmp_path)).enrich(record)["threat_intel"]["ioc_source"] == "ip-feed"
+    assert (
+        ThreatIntelEnricher(_store(tmp_path)).enrich(record)["threat_intel"]["ioc_source"]
+        == "ip-feed"
+    )
 
 
 # --------------------------------------------------------------------------

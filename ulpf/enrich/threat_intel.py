@@ -188,9 +188,7 @@ class IndicatorStore:
         with self._lock:
             self._files = files
             self._rebuild_locked()
-        _log.info(
-            "loaded IOC files", extra={"files": len(files), "indicators": len(self._set)}
-        )
+        _log.info("loaded IOC files", extra={"files": len(files), "indicators": len(self._set)})
 
     def _read_and_validate(self, path: Path) -> IocFile | None:
         """Parse + validate one file; log and return ``None`` on any failure."""

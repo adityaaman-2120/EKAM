@@ -25,6 +25,12 @@ _ASA_LINE = (
 _FORTI_LINE = (
     (_FIXTURES / "fortigate_traffic_accept.log").read_text(encoding="utf-8").splitlines()[0]
 )
+# Private source (RFC 1918) -> genuinely public destination, denied to RDP.
+_ENRICH_LINE = (
+    'date=2019-05-10 time=11:50:48 logid="0001000014" type="traffic" subtype="forward" '
+    "srcip=10.20.30.40 srcport=62024 dstip=8.8.8.8 dstport=3389 proto=6 "
+    'action="deny" sentbyte=120 rcvdbyte=0'
+)
 
 
 def _registry() -> SourceRegistry:
@@ -61,6 +67,34 @@ def test_report_matches_a_source_and_normalizes() -> None:
     assert "xlate_src_ip" in report["unmapped"]["keys"]
 
 
+def test_report_runs_the_enrichment_chain_with_network_context() -> None:
+    report = build_report(_ENRICH_LINE.encode("utf-8"), _registry(), with_crosswalk=False)
+
+    enrichment = report["enrichment"]
+    assert enrichment["ran"] is True
+
+    # the merged enrichments dict is populated and carries a NON-EMPTY network context
+    net = enrichment["enrichments"]["network_context"]
+    assert net["ips"]["10.20.30.40"]["is_private"] is True
+    assert net["ips"]["8.8.8.8"]["is_private"] is False
+    assert net["direction"] == "outbound"
+    assert net["src_zone"] == "corp"  # 10.0.0.0/8 in configs/assets.yaml
+
+    # the same values are on the normalized record and promoted into OCSF
+    assert report["normalized"]["enrichments"]["network_context"]["src_zone"] == "corp"
+    assert report["normalized"]["connection_info"]["direction"] == "Outbound"
+
+    by_name = {row["name"]: row for row in enrichment["enrichers"]}
+    assert by_name["network_context"]["status"] == "produced"
+    assert by_name["network_context"]["latency_ms"] >= 0.0
+    assert by_name["attack_tagger"]["status"] == "produced"
+    assert enrichment["enrichments"]["attack"]["technique_ids"] == ["T1110"]
+
+    # geoip: cleanly disabled (no .mmdb), never an error
+    assert by_name["geoip"]["status"] == "disabled"
+    assert "database" in by_name["geoip"]["reason"]
+
+
 def test_report_no_match_carries_a_parse_note() -> None:
     report = build_report(b"just an ordinary sentence", _registry(), with_crosswalk=False)
 
@@ -94,9 +128,38 @@ def test_inspect_is_registered_on_the_app() -> None:
 def test_inspect_line_renders_all_sections() -> None:
     result = runner.invoke(app, ["inspect", "--line", _ASA_LINE])
     assert result.exit_code == 0
-    for section in ("RAW", "SNIFF", "MATCH", "PARSED", "NORMALIZED", "VALIDATION", "UNMAPPED"):
+    for section in (
+        "RAW",
+        "SNIFF",
+        "MATCH",
+        "PARSED",
+        "NORMALIZED",
+        "ENRICHMENT",
+        "VALIDATION",
+        "UNMAPPED",
+    ):
         assert section in result.stdout
     assert "cisco_asa" in result.stdout
+
+
+def test_inspect_file_shows_enrichment_section_with_network_context(tmp_path: Path) -> None:
+    log = tmp_path / "enrich.log"
+    log.write_text(_ENRICH_LINE + "\n", encoding="utf-8")
+    result = runner.invoke(app, ["inspect", "--file", str(log)])
+    assert result.exit_code == 0
+    assert "6 . ENRICHMENT" in result.stdout
+    assert "network_context" in result.stdout
+    assert "produced" in result.stdout
+    assert "geoip" in result.stdout and "disabled" in result.stdout
+    # the geoip 'DISABLED' warning log must not leak into the output (the
+    # ENRICHMENT panel already reports it) — nothing prints above the RAW panel
+    assert "geoip enricher DISABLED" not in result.output
+    assert result.stdout.index("1 . RAW") < result.stdout.index("6 . ENRICHMENT")
+
+    payload = runner.invoke(app, ["inspect", "--json", "--file", str(log)])
+    report = json.loads(payload.stdout)
+    assert report["enrichment"]["enrichments"]["network_context"]["ips"]  # non-empty
+    assert report["enrichment"]["enrichments"]["network_context"]["direction"] == "outbound"
 
 
 def test_inspect_sniff_panel_flags_source_handled_unknown() -> None:

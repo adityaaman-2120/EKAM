@@ -133,12 +133,15 @@ class AttackRule:
             cat in view.categories for cat in self.suricata_categories
         ):
             return False
-        if self.signature_substrings and (
-            view.signature is None
-            or not any(sub in view.signature for sub in self.signature_substrings)
-        ):
-            return False
-        return True
+        # A rule with signature_substrings fails to match when the record has no
+        # signature, or when none of the substrings appear in it.
+        return not (
+            self.signature_substrings
+            and (
+                view.signature is None
+                or not any(sub in view.signature for sub in self.signature_substrings)
+            )
+        )
 
 
 @dataclass
@@ -180,9 +183,7 @@ class AttackMap:
             return cls([])
         document = yaml.safe_load(file.read_text(encoding="utf-8")) or {}
         rules = [
-            rule
-            for raw in document.get("rules") or []
-            if (rule := _parse_rule(raw)) is not None
+            rule for raw in document.get("rules") or [] if (rule := _parse_rule(raw)) is not None
         ]
         return cls(rules, _parse_techniques(document.get("techniques") or {}))
 
@@ -237,7 +238,10 @@ class AttackTagger:
     def describe(self) -> dict[str, Any]:
         """Readiness summary for the /health endpoint."""
         rules = len(self._map.rules)
-        return {"ready": rules > 0, "detail": f"{rules} rules, {len(self._map.techniques)} techniques"}
+        return {
+            "ready": rules > 0,
+            "detail": f"{rules} rules, {len(self._map.techniques)} techniques",
+        }
 
     def enrich(self, record: dict[str, Any]) -> dict[str, Any]:
         """Return ``{"attack": {...}}`` on a rule hit, else ``{}``."""
@@ -356,7 +360,11 @@ def _in_range(value: int | None, low: int | None, high: int | None) -> bool:
 
 def _tactic_sort_key(tactic: str) -> tuple[int, str]:
     """Sort tactics in kill-chain order, unknown ones last (alphabetical)."""
-    return (_TACTIC_ORDER.index(tactic), "") if tactic in _TACTIC_ORDER else (len(_TACTIC_ORDER), tactic)
+    return (
+        (_TACTIC_ORDER.index(tactic), "")
+        if tactic in _TACTIC_ORDER
+        else (len(_TACTIC_ORDER), tactic)
+    )
 
 
 def _opt_int(value: Any) -> int | None:

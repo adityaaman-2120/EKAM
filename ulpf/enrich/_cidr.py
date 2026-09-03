@@ -71,9 +71,7 @@ class _Trie(Generic[_T]):
 class CidrTrie(Generic[_T]):
     """CIDR -> value index with longest-prefix lookup, one trie per address family."""
 
-    def __init__(
-        self, entries: Iterable[tuple[IPv4Network | IPv6Network, _T]] = ()
-    ) -> None:
+    def __init__(self, entries: Iterable[tuple[IPv4Network | IPv6Network, _T]] = ()) -> None:
         """Build from ``(network, value)`` pairs."""
         self._v4: _Trie[_T] = _Trie(_V4_BITS)
         self._v6: _Trie[_T] = _Trie(_V6_BITS)

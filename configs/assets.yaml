@@ -37,6 +37,10 @@ zones:
     criticality: critical
 
   # --- edge / public-facing ----------------------------------------------
+  # 203.0.113.0/24 is RFC 5737 TEST-NET-3: a PUBLIC range reserved for
+  # documentation/examples, used here as stand-in NAT-pool space. Zone
+  # membership is about asset ownership, NOT privacy — network_context still
+  # classifies addresses here is_private=false / is_global=true.
   - cidr: 203.0.113.0/24
     zone: edge-nat-pool
     criticality: medium

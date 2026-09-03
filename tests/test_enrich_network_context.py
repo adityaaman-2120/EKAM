@@ -115,6 +115,54 @@ def test_public_ip_has_no_private_flags() -> None:
     assert pub["is_loopback"] is False and pub["is_multicast"] is False
 
 
+@pytest.mark.parametrize(
+    ("ip", "is_private", "is_global"),
+    [
+        # RFC 1918 private space
+        ("10.20.30.40", True, False),
+        ("172.16.5.5", True, False),
+        ("192.168.1.9", True, False),
+        # loopback / link-local
+        ("127.0.0.1", True, False),
+        ("169.254.10.10", True, False),
+        # multicast: not private, and globally scoped on this stdlib
+        ("224.0.0.1", False, True),
+        # RFC 6598 carrier-grade NAT: shared space, NOT private, NOT global
+        ("100.64.1.1", False, False),
+        # RFC 5737 / RFC 3849 documentation ranges: PUBLIC by intent, pinned so
+        # here even though recent CPython reports them "not globally reachable".
+        ("192.0.2.5", False, True),
+        ("198.51.100.5", False, True),
+        ("203.0.113.99", False, True),
+        ("2001:db8:aa::1", False, True),
+    ],
+)
+def test_classification_comes_from_the_address_only(
+    ip: str, is_private: bool, is_global: bool
+) -> None:
+    ctx = _enricher().enrich(_record(src=ip, dst="8.8.8.8"))["network_context"]
+    info = ctx["ips"][ip]
+    assert info["is_private"] is is_private, f"{ip} is_private"
+    assert info["is_global"] is is_global, f"{ip} is_global"
+
+
+def test_loopback_and_multicast_flags_are_the_stdlib_values() -> None:
+    ctx = _enricher().enrich(_record(src="127.0.0.1", dst="224.0.0.1"))["network_context"]
+    assert ctx["ips"]["127.0.0.1"]["is_loopback"] is True
+    assert ctx["ips"]["224.0.0.1"]["is_multicast"] is True
+
+
+def test_a_public_address_can_still_carry_a_configured_zone() -> None:
+    # 203.0.113.0/24 -> edge-nat-pool in configs/assets.yaml, yet it is PUBLIC.
+    # Zone membership and privacy are independent facts and must not be conflated.
+    ctx = _enricher().enrich(_record(src="10.20.30.40", dst="203.0.113.99"))["network_context"]
+    dst = ctx["ips"]["203.0.113.99"]
+    assert dst["zone"] == "edge-nat-pool"
+    assert dst["is_private"] is False
+    assert dst["is_global"] is True
+    assert ctx["dst_zone"] == "edge-nat-pool"
+
+
 # --------------------------------------------------------------------------
 # direction inference
 
@@ -129,6 +177,21 @@ def test_public_ip_has_no_private_flags() -> None:
     ],
 )
 def test_direction_inference(src: str, dst: str, expected: str) -> None:
+    ctx = _enricher().enrich(_record(src=src, dst=dst))["network_context"]
+    assert ctx["direction"] == expected
+
+
+@pytest.mark.parametrize(
+    ("src", "dst", "expected"),
+    [
+        ("10.20.30.40", "203.0.113.99", "outbound"),  # private -> doc-range (public)
+        ("203.0.113.99", "10.20.30.40", "inbound"),  # doc-range (public) -> private
+        ("10.20.30.40", "192.168.1.9", "internal"),  # private -> private
+        ("203.0.113.99", "198.51.100.5", "transit"),  # doc-range -> doc-range (both public)
+    ],
+)
+def test_direction_treats_documentation_ranges_as_public(src: str, dst: str, expected: str) -> None:
+    # Regression: 10.20.30.40 -> 203.0.113.99 must be "outbound", not "internal".
     ctx = _enricher().enrich(_record(src=src, dst=dst))["network_context"]
     assert ctx["direction"] == expected
 

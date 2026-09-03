@@ -4,13 +4,27 @@ For every IP address in a normalized record this adds, under
 ``enrichments["network_context"]``:
 
 * ``ip_version`` (4 or 6) and the RFC classification booleans ``is_private``
-  (RFC 1918 / RFC 4193 and friends, per the stdlib), ``is_loopback``,
-  ``is_multicast``, ``is_reserved``, plus ``is_global``;
+  (RFC 1918 / RFC 4193 and friends), ``is_loopback``, ``is_multicast``,
+  ``is_reserved``, plus ``is_global``;
 * a ``zone`` and ``criticality`` from a configurable CIDR -> zone map
   (``configs/assets.yaml``), matched by **longest prefix**;
 * a ``direction`` inferred from the src/dst pair:
   private -> public = ``outbound``, public -> private = ``inbound``,
   private -> private = ``internal``, public -> public = ``transit``.
+
+**Classification and zone are two independent facts.** The RFC booleans come
+only from the address itself (:mod:`ipaddress`); ``zone`` / ``criticality`` come
+only from the CIDR lookup. An address can sit in a configured zone — a NAT pool,
+an edge range — and still be *public*; membership never implies privacy.
+
+The one deliberate departure from the stdlib is the RFC 5737 / RFC 3849
+**documentation ranges** (``192.0.2.0/24``, ``198.51.100.0/24``,
+``203.0.113.0/24``, ``2001:db8::/32``). These represent *public* hosts by
+intent, but recent CPython point releases (3.11.9+, gh-113171 / CVE-2024-4032)
+classify them ``is_private`` / not ``is_global`` because they are "not globally
+reachable". For perimeter log analysis that is wrong — a doc-range address in a
+real log stands in for an external host — so :data:`_DOCUMENTATION_NETS` forces
+them public, giving a classification that does not shift under a CPython patch.
 
 There is **no external data dependency**: everything comes from the stdlib
 :mod:`ipaddress` module and one small YAML file shipped with the deployment, so
@@ -50,6 +64,39 @@ _DIRECTION = {
     ("public", "public"): "transit",
 }
 
+# RFC 5737 (IPv4) + RFC 3849 (IPv6) reserve these for documentation/examples;
+# by intent they represent PUBLIC hosts. See the module docstring for why we
+# override the stdlib's "not globally reachable" -> is_private classification.
+_DOCUMENTATION_NETS: tuple[IPv4Network | IPv6Network, ...] = (
+    ip_network("192.0.2.0/24"),
+    ip_network("198.51.100.0/24"),
+    ip_network("203.0.113.0/24"),
+    ip_network("2001:db8::/32"),
+)
+
+
+def _is_documentation(obj: IPv4Address | IPv6Address) -> bool:
+    """Whether ``obj`` falls in an RFC 5737 / RFC 3849 documentation range."""
+    return any(obj in net for net in _DOCUMENTATION_NETS)
+
+
+def _classify(obj: IPv4Address | IPv6Address) -> dict[str, Any]:
+    """RFC classification for one address — from the address ONLY, never the zone map.
+
+    ``is_loopback`` / ``is_multicast`` / ``is_reserved`` are the stdlib values
+    verbatim. ``is_private`` / ``is_global`` are the stdlib values too, except
+    the documentation ranges (:data:`_DOCUMENTATION_NETS`) are forced public.
+    """
+    doc = _is_documentation(obj)
+    return {
+        "ip_version": obj.version,
+        "is_private": obj.is_private and not doc,
+        "is_loopback": obj.is_loopback,
+        "is_multicast": obj.is_multicast,
+        "is_reserved": obj.is_reserved,
+        "is_global": obj.is_global or doc,
+    }
+
 
 @dataclass(frozen=True)
 class ZoneInfo:
@@ -63,9 +110,7 @@ class ZoneInfo:
 class ZoneMap:
     """Immutable CIDR -> :class:`ZoneInfo` index with longest-prefix lookup."""
 
-    def __init__(
-        self, entries: Iterable[tuple[IPv4Network | IPv6Network, ZoneInfo]] = ()
-    ) -> None:
+    def __init__(self, entries: Iterable[tuple[IPv4Network | IPv6Network, ZoneInfo]] = ()) -> None:
         """Build the longest-prefix-match index from ``(network, info)`` pairs."""
         self._trie: CidrTrie[ZoneInfo] = CidrTrie(entries)
 
@@ -151,24 +196,19 @@ class NetworkContextEnricher:
         return {"network_context": context}
 
     def _describe(self, ip: str) -> dict[str, Any]:
-        """Classification + zone for one address string."""
+        """Classification (from the address) + zone (from the CIDR map) for one IP."""
         obj = ip_address(ip)
         info = self._zones.lookup(obj)
         return {
-            "ip_version": obj.version,
-            "is_private": obj.is_private,
-            "is_loopback": obj.is_loopback,
-            "is_multicast": obj.is_multicast,
-            "is_reserved": obj.is_reserved,
-            "is_global": obj.is_global,
+            **_classify(obj),
             "zone": info.zone if info else None,
             "criticality": info.criticality if info else None,
         }
 
 
 def _scope(ip: str) -> str:
-    """``"private"`` for a non-globally-routable address, else ``"public"``."""
-    return "private" if ip_address(ip).is_private else "public"
+    """``"private"`` for an effectively non-public address, else ``"public"``."""
+    return "private" if _classify(ip_address(ip))["is_private"] else "public"
 
 
 def _infer_direction(src: str | None, dst: str | None) -> str | None:

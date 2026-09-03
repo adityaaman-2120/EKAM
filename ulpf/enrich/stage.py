@@ -67,6 +67,11 @@ class EnrichStage:
         return event
 
 
+def promote_enrichments(ocsf: dict[str, Any], enrichments: dict[str, Any]) -> None:
+    """Public entry point for :func:`_promote` (used by ``ulpf inspect``)."""
+    _promote(ocsf, enrichments)
+
+
 def _promote(ocsf: dict[str, Any], enrichments: dict[str, Any]) -> None:
     """Copy enrichment values into the OCSF attributes that have a real home."""
     _promote_geoip(ocsf, enrichments.get("geoip") or {})
