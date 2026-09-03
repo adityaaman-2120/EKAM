@@ -62,11 +62,28 @@ class IntegritySettings(BaseModel):
 
 
 class EnrichSettings(BaseModel):
-    """Enrichment data sources; paths are optional when unavailable."""
+    """Enrichment data sources and the hard per-enricher time budget.
+
+    Paths are optional (an enricher with no data falls back to a no-op).
+    ``timeout_ms`` is the wall-clock ceiling for a single enricher on a single
+    event; overrunning it skips that enricher for that event (never blocks the
+    hot path).
+    """
 
     geoip_db_path: Path | None = None
+    geoip_asn_db_path: Path | None = None
     ioc_path: Path | None = None
+    ioc_dir: Path = Path("configs/iocs")
+    assets_path: Path = Path("configs/assets.yaml")
+    attack_map_path: Path = Path("configs/attack_map.yaml")
     enabled: bool = True
+    timeout_ms: int = 50
+
+    # Per-enricher toggles (all no-ops when ``enabled`` is False).
+    network_context: bool = True
+    geoip: bool = True
+    threat_intel: bool = True
+    attack_tagger: bool = True
 
 
 class PipelineSettings(BaseModel):

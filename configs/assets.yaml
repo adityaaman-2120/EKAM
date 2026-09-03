@@ -1,0 +1,50 @@
+# Asset zone map for the network_context enricher
+# (ulpf/enrich/network_context.py).
+#
+# This is a pure-Python enrichment source: no external data feed, no lookups off
+# the box, so it works exactly the same inside an air-gapped container. The file
+# is loaded once at startup into a longest-prefix-match index.
+#
+# `zones` maps a CIDR to a zone name plus a criticality level. The MOST SPECIFIC
+# containing prefix wins, so 192.168.100.0/24 (management) beats a covering
+# 192.168.0.0/16, which beats a covering 0.0.0.0/0. An address that matches no
+# entry gets zone = null.
+#
+# `criticality_levels` is the ordered vocabulary (low -> high); each zone picks
+# one. Downstream (alert routing, risk scoring) can compare by index.
+
+criticality_levels: [informational, low, medium, high, critical]
+
+zones:
+  # --- internal / RFC 1918 --------------------------------------------------
+  - cidr: 10.0.0.0/8
+    zone: corp
+    criticality: medium
+  - cidr: 10.10.0.0/16
+    zone: corp-servers
+    criticality: high
+  - cidr: 10.10.20.0/24
+    zone: crown-jewels
+    criticality: critical
+  - cidr: 172.16.0.0/12
+    zone: lab
+    criticality: low
+  - cidr: 192.168.1.0/24
+    zone: dmz
+    criticality: high
+  - cidr: 192.168.100.0/24
+    zone: management
+    criticality: critical
+
+  # --- edge / public-facing ----------------------------------------------
+  - cidr: 203.0.113.0/24
+    zone: edge-nat-pool
+    criticality: medium
+
+  # --- IPv6 --------------------------------------------------------------
+  - cidr: fd00:1234::/32
+    zone: corp-v6
+    criticality: medium
+  - cidr: 2001:db8:aa::/48
+    zone: dmz-v6
+    criticality: high

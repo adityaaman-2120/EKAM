@@ -32,6 +32,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Optional GeoIP enrichment. The GeoLite2 .mmdb data files are NOT bundled and
+# NOT redistributable — see deploy/data/README.md.
+geoip = ["maxminddb>=2.2"]
 dev = [
     "pytest",
     "pytest-asyncio",

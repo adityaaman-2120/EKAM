@@ -2,8 +2,11 @@
 
 ``Runtime`` is the object ``ulpf run`` drives. It builds a single
 :class:`~ulpf.core.pipeline.Pipeline` (``RawStoreStage`` -> ``ParseStage`` ->
-``NormalizeStage``), points every listener's ``on_event`` at
-:meth:`Pipeline.submit`, and manages orderly startup and shutdown:
+``NormalizeStage`` -> ``EnrichStage`` -> ``ValidateStage``), points every
+listener's ``on_event`` at :meth:`Pipeline.submit`, and manages orderly startup
+and shutdown. The enricher chain (network context, GeoIP, threat intel, ATT&CK
+tagging) is assembled from ``settings.enrich`` and its per-enricher status is
+served on the intake app's ``GET /health``.
 
 * **start**  — pipeline workers, then the syslog UDP/TCP listeners, the syslog
   TLS listener (only if ``tls.cert_path``/``key_path`` are set), a file tailer
@@ -27,12 +30,16 @@ import uvicorn
 from ulpf.config.settings import Settings
 from ulpf.core.models import RawEvent
 from ulpf.core.pipeline import ParseStage, Pipeline, RawStoreStage
+from ulpf.enrich.factory import build_enrichers, describe_enrichers
+from ulpf.enrich.pipeline import EnrichmentPipeline
+from ulpf.enrich.stage import EnrichStage
+from ulpf.enrich.threat_intel import ThreatIntelEnricher
 from ulpf.ingest.file_tail import FileTailer
 from ulpf.ingest.http_intake import create_intake_app
 from ulpf.ingest.syslog_tcp import SyslogTcpListener
 from ulpf.ingest.syslog_tls import SyslogTlsListener
 from ulpf.ingest.syslog_udp import SyslogUdpListener
-from ulpf.normalize.stage import NormalizeStage
+from ulpf.normalize.stage import NormalizeStage, ValidateStage
 from ulpf.parse.coordinator import ParseCoordinator
 from ulpf.parse.dsl.loader import SourceRegistry
 from ulpf.sinks.raw_store import RawStore
@@ -64,12 +71,16 @@ class Runtime:
         sources_dir = settings.parse.sources_dir
         sources_dir.mkdir(parents=True, exist_ok=True)
         self._sources.load_all(sources_dir)
+        self._enrichers = build_enrichers(settings)
+        self._enrich = EnrichmentPipeline(settings, self._enrichers)
         self._pipeline = Pipeline(
             settings,
             [
                 RawStoreStage(self._raw_store),
                 ParseStage(settings, self._coordinator),
                 NormalizeStage(settings, self._sources),
+                EnrichStage(settings, self._enrich),
+                ValidateStage(settings, self._sources),
             ],
         )
         self._udp = SyslogUdpListener()
@@ -99,11 +110,18 @@ class Runtime:
         """Bound TLS port, or ``None`` when the TLS listener is disabled."""
         return int(self._tls.sockname[1]) if self._tls is not None else None
 
+    def enricher_status(self) -> list[dict[str, object]]:
+        """Per-enricher name / enabled / ready / detail — surfaced on ``/health``."""
+        return describe_enrichers(self._settings, self._enrichers)
+
     async def start(self) -> None:
         """Start the pipeline, then bind every configured listener."""
         ingest = self._settings.ingest
         submit: _Submit = self._pipeline.submit
         self._sources.start_watching()  # hot-reload source definitions (requirement e)
+        for enricher in self._enrichers:  # hot-reload IOC files (threat_intel)
+            if isinstance(enricher, ThreatIntelEnricher):
+                enricher.start()
         self._pipeline.start()
         await self._udp.start(_BIND_HOST, ingest.syslog_udp_port, submit)
         await self._tcp.start(_BIND_HOST, ingest.syslog_tcp_port, submit)
@@ -122,7 +140,7 @@ class Runtime:
     async def _start_http(self, submit: _Submit) -> None:
         """Launch the embedded uvicorn serving the HTTP intake app."""
         config = uvicorn.Config(
-            create_intake_app(self._settings, submit),
+            create_intake_app(self._settings, submit, health=self.enricher_status),
             host=_BIND_HOST,
             port=self._settings.ingest.http_port,
             log_level="warning",
@@ -152,6 +170,10 @@ class Runtime:
                 await asyncio.wait_for(task, timeout=5.0)
         self._bg.clear()
         self._sources.stop_watching()
+        for enricher in self._enrichers:
+            if isinstance(enricher, ThreatIntelEnricher):
+                enricher.stop()
+        self._enrich.close()
         await self._pipeline.stop()
 
     async def serve(self, on_started: _OnStarted | None = None) -> None:

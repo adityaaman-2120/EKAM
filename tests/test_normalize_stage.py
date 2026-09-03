@@ -11,7 +11,7 @@ from ulpf.config.settings import Settings, StorageSettings
 from ulpf.core.metrics import snapshot
 from ulpf.core.models import NormalizedEvent, ParsedEvent
 from ulpf.integrity.hashing import make_raw_event
-from ulpf.normalize.stage import NormalizeStage
+from ulpf.normalize.stage import NormalizeStage, ValidateStage
 from ulpf.parse.dsl.loader import SourceRegistry
 from ulpf.sinks.dlq import DeadLetterQueue
 
@@ -143,29 +143,31 @@ async def test_no_source_match_passes_through_as_unknown_without_dlq(tmp_path: P
 
 async def test_invalid_record_is_dead_lettered_when_on_failure_dead_letter(tmp_path: Path) -> None:
     settings = _settings(tmp_path)
-    stage = NormalizeStage(
-        settings, _registry(tmp_path, _incomplete_source(on_failure="dead_letter"))
-    )
+    registry = _registry(tmp_path, _incomplete_source(on_failure="dead_letter"))
     event = _parsed(_FORTI_LINE, _FORTI_FIELDS)
 
-    result = await stage.process(event)
+    normalized = await NormalizeStage(settings, registry).process(event)
+    assert isinstance(normalized, NormalizedEvent)  # NormalizeStage no longer validates
 
-    assert result is None  # dropped from the pipeline
+    result = await ValidateStage(settings, registry).process(normalized)
+
+    assert result is None  # dropped from the pipeline at the validate stage
     recent = list(DeadLetterQueue(settings).iter_recent(1))
     assert len(recent) == 1
-    assert recent[0].stage == "normalize"
+    assert recent[0].stage == "validate"
     assert recent[0].reason == "ocsf_validation_failed"
-    assert recent[0].raw == event.raw
+    assert recent[0].raw_hash == event.raw_hash  # traceable; raw bytes stay in bronze
     assert recent[0].detail["source_type"] == "test_forti"
     assert any("src_endpoint" in e for e in recent[0].detail["errors"])
 
 
 async def test_invalid_record_is_emitted_when_on_failure_warn(tmp_path: Path) -> None:
     settings = _settings(tmp_path)
-    stage = NormalizeStage(settings, _registry(tmp_path, _incomplete_source(on_failure="warn")))
+    registry = _registry(tmp_path, _incomplete_source(on_failure="warn"))
     event = _parsed(_FORTI_LINE, _FORTI_FIELDS)
 
-    result = await stage.process(event)
+    normalized = await NormalizeStage(settings, registry).process(event)
+    result = await ValidateStage(settings, registry).process(normalized)
 
     assert isinstance(result, NormalizedEvent)  # emitted despite failing validation
     assert result.source_type == "test_forti"

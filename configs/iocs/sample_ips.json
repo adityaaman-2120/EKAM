@@ -1,0 +1,13 @@
+{
+  "type": "ip",
+  "source": "ULPF-SYNTHETIC-DEMO",
+  "confidence": "high",
+  "_comment": "SYNTHETIC TEST DATA ONLY -- NOT REAL THREAT INTELLIGENCE. Every address below is a reserved documentation address (IPv4: RFC 5737 TEST-NET-1/2/3; IPv6: RFC 3849 2001:db8::/32) and can never route on the public internet. It exists so the demo and tests can show a threat-intel hit without shipping, or depending on, any real IOC feed. Replace this file with your licensed feed exports in production.",
+  "indicators": [
+    "192.0.2.66",
+    "192.0.2.123",
+    "198.51.100.23",
+    "203.0.113.99",
+    "2001:db8:dead:beef::1"
+  ]
+}

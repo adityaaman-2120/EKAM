@@ -178,8 +178,29 @@ def build_intake_router(settings: Settings, on_event: OnEvent) -> APIRouter:
     return router
 
 
-def create_intake_app(settings: Settings, on_event: OnEvent) -> FastAPI:
-    """Create the standalone HTTP-intake ASGI app (serve on ``ingest.http_port``)."""
+HealthProvider = Callable[[], list[dict[str, object]]]
+
+
+def create_intake_app(
+    settings: Settings, on_event: OnEvent, *, health: HealthProvider | None = None
+) -> FastAPI:
+    """Create the standalone HTTP-intake ASGI app (serve on ``ingest.http_port``).
+
+    ``health`` is an optional callback returning the per-enricher status rows for
+    the ``GET /health`` endpoint (see
+    :func:`ulpf.enrich.factory.describe_enrichers`).
+    """
     app = FastAPI(title="ULPF HTTP Intake", version="0.1.0")
     app.include_router(build_intake_router(settings, on_event))
+
+    @app.get("/health", tags=["health"])
+    def get_health() -> dict[str, object]:
+        """Liveness plus the configured enricher chain and each enricher's status."""
+        enrichers = health() if health is not None else []
+        return {
+            "status": "ok",
+            "enrichment_enabled": settings.enrich.enabled,
+            "enrichers": enrichers,
+        }
+
     return app

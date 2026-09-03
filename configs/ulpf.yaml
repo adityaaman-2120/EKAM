@@ -36,9 +36,21 @@ integrity:
   batch_timeout_seconds: 10
 
 enrich:
-  geoip_db_path: null
+  # Optional MaxMind GeoLite2 databases. Leave null to run without geo/ASN
+  # enrichment (the enricher self-disables). See deploy/data/README.md to obtain
+  # them; the .mmdb files are never committed.
+  geoip_db_path: null          # e.g. deploy/data/GeoLite2-City.mmdb
+  geoip_asn_db_path: null       # e.g. deploy/data/GeoLite2-ASN.mmdb
   ioc_path: null
-  enabled: true
+  ioc_dir: configs/iocs         # threat-intel indicator sets (*.json), hot-reloaded
+  assets_path: configs/assets.yaml
+  attack_map_path: configs/attack_map.yaml   # rule -> MITRE ATT&CK technique map
+  enabled: true                 # master switch for the whole enrichment stage
+  timeout_ms: 50                 # hard per-enricher budget (ms)
+  network_context: true          # RFC classification, asset zone, direction (pure Python)
+  geoip: true                    # MaxMind GeoLite2 (optional; self-disables if absent)
+  threat_intel: true             # IOC matching against configs/iocs/*.json
+  attack_tagger: true            # MITRE ATT&CK technique tagging
 
 pipeline:
   worker_count: 4

@@ -1,0 +1,98 @@
+# Rule -> MITRE ATT&CK technique map for the attack_tagger enricher
+# (ulpf/enrich/attack_tagger.py).
+#
+# Each rule under `rules:` has an `id`, a list of `technique_ids`, an optional
+# `tactics` override, and a `when:` block. Every condition present in a `when:`
+# block must match for the rule to fire (AND). A record can trigger several
+# rules; their techniques/tactics are merged and de-duplicated.
+#
+# Supported `when:` conditions
+#   class_uid: <int>                     OCSF class of the record
+#   action / actions: <str> | [<str>]    OCSF action (case-insensitive), e.g. Denied
+#   dst_ports: [<int>, ...]              destination port is one of these
+#   dst_port_min / dst_port_max: <int>   destination port range (inclusive)
+#   min_bytes_out: <int>                 traffic.bytes_out >= this
+#   direction: <str>                     connection_info.direction (e.g. Outbound)
+#   suricata_categories: [<str>, ...]    finding_info.types / alert.category equals one (ci)
+#   suricata_signature_contains: [<str>] finding_info.title / alert.signature contains one (ci)
+#
+# `techniques:` (optional) extends or overrides the technique-name / tactics
+# lookup bundled in the module, so operators can add IDs without code changes.
+
+techniques: {}
+
+rules:
+  # --- port scanning -> T1046 Network Service Discovery -----------------
+  - id: scan-suricata-signature
+    technique_ids: [T1046]
+    when:
+      suricata_signature_contains: ["scan", "sweep", " nmap", "portscan", "masscan", "port scan"]
+
+  - id: scan-suricata-category
+    technique_ids: [T1046]
+    when:
+      suricata_categories:
+        - "Attempted Information Leak"
+        - "Detection of a Network Scan"
+        - "Potentially Bad Traffic"
+
+  # --- brute force on 22 / 3389 -> T1110 Brute Force -------------------
+  - id: bruteforce-ssh-rdp-denied
+    technique_ids: [T1110]
+    when:
+      class_uid: 4001
+      action: Denied
+      dst_ports: [22, 3389]
+
+  - id: bruteforce-suricata-signature
+    technique_ids: [T1110]
+    when:
+      suricata_signature_contains:
+        ["brute force", "bruteforce", "login attempt", "password guess", "hydra", "credential stuffing"]
+
+  # --- C2 over uncommon ports -> T1571 Non-Standard Port -------------
+  - id: c2-known-bad-ports
+    technique_ids: [T1571]
+    when:
+      class_uid: 4001
+      action: Allowed
+      dst_ports: [1080, 4444, 5555, 6666, 6667, 8081, 9001, 12345, 31337, 65535]
+
+  - id: c2-suricata-signature
+    technique_ids: [T1571]
+    tactics: [command-and-control]
+    when:
+      suricata_signature_contains:
+        ["command and control", "cobalt strike", "beacon", "trojan", "covenant", "sliver c2"]
+
+  # --- exfiltration by large outbound transfer -> T1048 -------------
+  - id: exfil-large-outbound-transfer
+    technique_ids: [T1048]
+    when:
+      class_uid: 4001
+      min_bytes_out: 50000000        # >= 50 MB carried out on a single connection
+
+  - id: exfil-large-outbound-confirmed-direction
+    technique_ids: [T1048]
+    when:
+      class_uid: 4001
+      direction: Outbound
+      min_bytes_out: 10000000        # >= 10 MB when the flow is known to be outbound
+
+  # --- exploit attempts from Suricata categories -> T1190 ----------
+  - id: exploit-suricata-categories
+    technique_ids: [T1190]
+    when:
+      suricata_categories:
+        - "Web Application Attack"
+        - "Attempted Administrator Privilege Gain"
+        - "Attempted User Privilege Gain"
+        - "Successful Administrator Privilege Gain"
+        - "A Network Trojan was detected"
+
+  - id: exploit-suricata-signature
+    technique_ids: [T1190]
+    when:
+      suricata_signature_contains:
+        ["exploit", "cve-", "sql injection", "remote code execution", "shellcode",
+         "directory traversal", "deserialization", "arbitrary file"]

@@ -71,6 +71,11 @@ NORMALIZATION_COMPLETENESS = Histogram(
     "Fraction of an OCSF class's required+recommended attributes populated, per event.",
     buckets=(0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0),
 )
+ENRICH_LATENCY = Histogram(
+    "ulpf_enrich_latency_seconds",
+    "Wall-clock time spent in a single enricher for one event (timeouts included).",
+    ["enricher"],
+)
 
 _ALL_METRICS = (
     EVENTS_RECEIVED,
@@ -85,6 +90,7 @@ _ALL_METRICS = (
     STAGE_LATENCY,
     END_TO_END_LATENCY,
     NORMALIZATION_COMPLETENESS,
+    ENRICH_LATENCY,
 )
 
 

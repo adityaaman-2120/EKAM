@@ -48,4 +48,9 @@ deploy/certs/*.key
 deploy/certs/*.csr
 deploy/certs/*.srl
 
+# MaxMind GeoLite2 databases — licence-restricted, obtained out of band, and
+# NEVER committed to this repository (see deploy/data/README.md)
+*.mmdb
+deploy/data/*.mmdb
+
 check_parse.py
