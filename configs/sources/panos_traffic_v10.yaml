@@ -24,9 +24,28 @@ product_version: "10.x"
 priority: 20
 
 detect:
+  # HOW THE PAN-OS VERSION IS DETERMINED — by COLUMN COUNT.
+  #   PAN-OS TRAFFIC logs carry no version field. The two supported schemas have
+  #   fixed, different field counts: the standard 10.x TRAFFIC record is 47
+  #   comma-separated fields; 11.x is 51 (tunnel_inspection_rule inserted +
+  #   link_change_count / policy_id / link_switches appended). `field_count`
+  #   below is that count — it MUST equal len(COLUMN_MAPS["panos_traffic","10.1"])
+  #   in ulpf/parse/column_maps.py, and the panos regression test asserts it.
+  #
+  #   LIMITATION: this only holds for the STANDARD TRAFFIC log format. An
+  #   operator who configures a custom PAN-OS log-forwarding format (a chosen
+  #   subset/superset of fields) produces a different count and will match
+  #   NEITHER definition — the line goes to the DLQ (a visible, safe failure)
+  #   rather than being silently decoded with the wrong column map. A fleet that
+  #   mixes custom formats, or future PAN-OS minors that change the count, must
+  #   bind the device to a version out of band (per-source_id) — not yet wired.
+  #
+  #   The first two rules are a cheap PAN-OS-CSV guard (receive_time,serial,TYPE)
+  #   so a non-PAN-OS 47-field CSV can never match on count alone.
   all:
-    - regex: '\bpa-fw|PA-|PAN-OS\b'   # cheap host/vendor hint
     - contains: ",TRAFFIC,"
+    - regex: '\d{4}/\d{2}/\d{2}[ T]\d{2}:\d{2}:\d{2},\d+,TRAFFIC,'
+    - field_count: {delimiter: ",", equals: 47}   # PAN-OS 10.x standard TRAFFIC
 
 parse:
   envelope: syslog

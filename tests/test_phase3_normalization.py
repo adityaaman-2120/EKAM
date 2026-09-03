@@ -57,25 +57,20 @@ class Case:
     fixture: str
     class_uid: int
     ocsf_gap_keys: tuple[str, ...] = ()  # attrs OCSF can't hold -> must be in `unmapped`
-    routes_to: str | None = None  # the name detect resolves to, if not this one
 
     def route(self, name: str) -> str:
         """The definition name the registry is expected to return for this fixture."""
-        return self.routes_to or name
+        return name
 
 
-# One representative fixture per shipped source definition. ``panos_traffic_v11``
-# is content-identical to v10 on the wire (the field *order* differs, which is an
-# operator-pinned deployment fact, not something detect can see), so its line
-# routes to the lower-sorted ``panos_traffic_v10`` — see the panos_traffic_v10.yaml
-# header. Normalization below still uses each pinned version's own definition.
+# One representative fixture per shipped source definition. The two PAN-OS files
+# are told apart by CSV column count (10.x standard = 47 fields, 11.x = 51) via a
+# `field_count` detect rule — see the panos_traffic_v10.yaml header.
 _CASES: dict[str, Case] = {
     "cisco_asa": Case("cisco_asa_302013.log", 4001, ("xlate_src_ip",)),
     "fortigate_traffic": Case("fortigate_traffic_accept.log", 4001, ("transip",)),
     "panos_traffic_v10": Case("panos_traffic_v10.log", 4001, ("nat_src_ip", "src_zone")),
-    "panos_traffic_v11": Case(
-        "panos_traffic_v11.log", 4001, ("nat_src_ip", "src_zone"), routes_to="panos_traffic_v10"
-    ),
+    "panos_traffic_v11": Case("panos_traffic_v11.log", 4001, ("nat_src_ip", "src_zone")),
     "iptables": Case("iptables_drop.log", 4001),
     "aws_vpc_flow": Case("aws_vpc_flow_accept.log", 4001),
     "suricata_eve_alert": Case("suricata_eve_alert.jsonl", 2004),

@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from pydantic import ValidationError
 
 from ulpf.core.errors import MappingError
 from ulpf.core.models import NormalizedEvent
@@ -125,7 +126,7 @@ def test_int_coercion_rejects_non_integral() -> None:
 # from-lists, maps, defaults, required
 
 
-def test_from_list_takes_first_present_and_consumes_only_it() -> None:
+def test_from_list_without_join_coalesces_to_first_present_and_consumes_only_it() -> None:
     out = _ocsf(
         {"b": "hit", "c": "later"},
         {"fields": {"t": {"from": ["a", "b", "c"], "type": "str"}}, "constants": {}},
@@ -135,14 +136,15 @@ def test_from_list_takes_first_present_and_consumes_only_it() -> None:
     assert out["unmapped"] == {"c": "later"}  # b consumed, a absent, c left over
 
 
-def test_from_list_concatenates_when_a_format_is_given() -> None:
-    fields = {"date": "2026-08-15", "time": "22:14:15"}
+def test_from_list_without_join_coalesces_even_with_a_timestamp_format() -> None:
+    # A list `from` + `format` but no `join` must NOT concatenate: it coalesces.
+    fields = {"eventtime": "2026-08-15 22:14:15", "date": "2026-08-15"}
     out = _ocsf(
         fields,
         {
             "fields": {
                 "time": {
-                    "from": ["date", "time"],
+                    "from": ["eventtime", "date"],
                     "type": "timestamp",
                     "format": "%Y-%m-%d %H:%M:%S",
                     "tz": "UTC",
@@ -152,7 +154,44 @@ def test_from_list_concatenates_when_a_format_is_given() -> None:
         unmapped="keep_all",
     )
     assert out["time"] == parse_timestamp("2026-08-15 22:14:15", fmt="%Y-%m-%d %H:%M:%S", tz="UTC")
+    assert out["unmapped"] == {"date": "2026-08-15"}  # only eventtime consumed
+
+
+def test_from_list_with_join_concatenates_present_values_in_order() -> None:
+    fields = {"date": "2019-05-10", "time": "11:50:48"}
+    out = _ocsf(
+        fields,
+        {
+            "fields": {
+                "time": {
+                    "from": ["date", "time"],
+                    "join": " ",
+                    "type": "timestamp",
+                    "format": "%Y-%m-%d %H:%M:%S",
+                    "tz": "UTC",
+                }
+            }
+        },
+        unmapped="keep_all",
+    )
+    expected = parse_timestamp("2019-05-10 11:50:48", fmt="%Y-%m-%d %H:%M:%S", tz="UTC")
+    assert out["time"] == expected
+    assert out["time"] == 1_557_489_048_000_000_000  # 2019-05-10T11:50:48Z in epoch ns
     assert out["unmapped"] == {}  # both date and time consumed
+
+
+def test_join_with_a_missing_field_concatenates_only_what_is_present() -> None:
+    out = _ocsf(
+        {"a": "left"},
+        {"fields": {"t": {"from": ["a", "b"], "join": "-", "type": "str"}}, "constants": {}},
+        unmapped="keep_all",
+    )
+    assert out["t"] == "left"  # b absent -> just "a"
+
+
+def test_join_on_a_scalar_from_is_rejected_at_load_time() -> None:
+    with pytest.raises(ValidationError, match="'join' only applies when 'from' is a list"):
+        _sd({"fields": {"t": {"from": "a", "join": " ", "type": "str"}}})
 
 
 def test_value_map_translates_and_falls_back_to_default() -> None:

@@ -9,11 +9,13 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 import yaml
 
+import ulpf.core.timeutil as timeutil
 from ulpf.core.timeutil import parse_timestamp
 from ulpf.normalize.mapper import Mapper
 from ulpf.normalize.ocsf.base import finalize
@@ -122,3 +124,61 @@ def test_106023_accepts_numeric_protocol_number() -> None:
     assert fields["proto"] == "6"
     assert record["connection_info"]["protocol_num"] == 6
     assert record["connection_info"]["protocol_name"] == "tcp"
+
+
+# --------------------------------------------------------------------------
+# RFC 3164 year-boundary rule, exercised end to end through the ASA source.
+# ASA syslog timestamps carry no year; the year is inferred from "now". These
+# cases must be pinned to a FROZEN clock so the assertions do not silently
+# change meaning as the real calendar advances.
+
+_ASA_TEMPLATE = (
+    "<134>{ts} fw01 %ASA-6-302013: Built outbound TCP connection 12345 "
+    "for outside:203.0.113.9/443 (203.0.113.9/443) "
+    "to inside:192.0.2.15/51234 (198.51.100.7/51234)"
+)
+
+
+@pytest.fixture()
+def frozen_now(monkeypatch: pytest.MonkeyPatch):  # noqa: ANN201 - returns a setter
+    """Freeze :func:`datetime.now` as seen by :mod:`ulpf.core.timeutil`."""
+
+    def _freeze(instant: datetime) -> None:
+        class _Frozen(datetime):
+            @classmethod
+            def now(cls, tz=None):  # type: ignore[override]
+                return instant.astimezone(tz) if tz is not None else instant.replace(tzinfo=None)
+
+        monkeypatch.setattr(timeutil, "datetime", _Frozen)
+
+    return _freeze
+
+
+def _asa_epoch_ns(ts: str) -> int:
+    """Run one ASA line with syslog timestamp ``ts`` end to end, return ``time``."""
+    fields = GrokEngine().parse(_ASA_TEMPLATE.format(ts=ts), _definition().parse.options)
+    record = finalize(Mapper().to_ocsf(_definition(), fields, event_uid=_UID, raw_hash=_HASH))
+    return int(record["time"])
+
+
+def _year_of(epoch_ns: int) -> int:
+    return (datetime(1970, 1, 1, tzinfo=UTC) + timedelta(microseconds=epoch_ns // 1000)).year
+
+
+def test_asa_year_boundary_past_date_takes_current_year(frozen_now) -> None:  # noqa: ANN001
+    frozen_now(datetime(2026, 6, 15, 12, 0, 0, tzinfo=UTC))
+    # A month in the past -> same (current) calendar year.
+    assert _year_of(_asa_epoch_ns("May 15 10:00:00")) == 2026
+
+
+def test_asa_year_boundary_future_date_rolls_back_a_year(frozen_now) -> None:  # noqa: ANN001
+    frozen_now(datetime(2026, 6, 15, 12, 0, 0, tzinfo=UTC))
+    # A few days ahead of "now" cannot be this year -> previous year.
+    assert _year_of(_asa_epoch_ns("Jun 18 09:00:00")) == 2025
+
+
+def test_asa_year_boundary_dec31_parsed_on_jan1_is_previous_year(frozen_now) -> None:  # noqa: ANN001
+    frozen_now(datetime(2026, 1, 1, 0, 0, 1, tzinfo=UTC))
+    # The classic bug: "Dec 31 23:59:59" seen one second into the new year must
+    # resolve to the OLD year, not be stamped ~365 days in the future.
+    assert _year_of(_asa_epoch_ns("Dec 31 23:59:59")) == 2025

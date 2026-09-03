@@ -7,7 +7,10 @@ It sits after :class:`~ulpf.core.pipeline.ParseStage`:
    matches, the event is passed through with ``source_type="unknown"`` (its
    fields kept for Phase 7 Drain3 template mining) — **not** dead-lettered.
 2. :meth:`~ulpf.normalize.mapper.Mapper.apply` maps the flat fields to a nested
-   OCSF record.
+   OCSF record. A :class:`~ulpf.core.errors.MappingError` (e.g. a required field
+   that would not coerce) dead-letters the event with the full parsed field
+   dict and the partially-built OCSF record in ``detail`` — the extracted
+   fields are never discarded.
 3. :func:`~ulpf.normalize.ocsf.base.finalize` fills the derived name fields and
    strips ``None`` values.
 4. :meth:`~ulpf.normalize.validator.OcsfValidator.validate` checks the record.
@@ -26,6 +29,7 @@ from __future__ import annotations
 import logging
 
 from ulpf.config.settings import Settings
+from ulpf.core.errors import MappingError
 from ulpf.core.metrics import EVENTS_NORMALIZED
 from ulpf.core.models import NormalizedEvent, ParsedEvent
 from ulpf.core.pipeline import Event
@@ -33,6 +37,7 @@ from ulpf.normalize.mapper import Mapper
 from ulpf.normalize.ocsf.base import finalize
 from ulpf.normalize.validator import OcsfValidator
 from ulpf.parse.dsl.loader import SourceRegistry
+from ulpf.parse.dsl.schema import SourceDefinition
 from ulpf.sinks.dlq import DeadLetterQueue
 
 _log = logging.getLogger(__name__)
@@ -64,11 +69,16 @@ class NormalizeStage:
         if definition is None:
             return self._passthrough(event)
 
-        ocsf = finalize(
-            self._mapper.apply(
-                definition, event.fields, event_uid=event.event_uid, raw_hash=event.raw_hash
+        try:
+            ocsf = finalize(
+                self._mapper.apply(
+                    definition, event.fields, event_uid=event.event_uid, raw_hash=event.raw_hash
+                )
             )
-        )
+        except MappingError as exc:
+            self._dead_letter_mapping_failure(event, definition, exc)
+            return None
+
         result = self._validator.validate(ocsf)
         if not result.valid:
             if definition.validation.on_failure == "dead_letter":
@@ -101,6 +111,34 @@ class NormalizeStage:
             source_type=definition.name,
             mapping_version=definition.version,
             enrichment={},
+        )
+
+    def _dead_letter_mapping_failure(
+        self, event: ParsedEvent, definition: SourceDefinition, exc: MappingError
+    ) -> None:
+        """Dead-letter a mapping failure, keeping the parsed fields and partial record.
+
+        The raw event is already in bronze; this makes the DLQ entry show *what
+        was parsed* and *how far mapping got*, so an operator can fix the source
+        definition without replaying the log.
+        """
+        detail = dict(exc.detail)
+        detail.setdefault("parsed_fields", dict(event.fields))
+        detail.setdefault("partial_ocsf", {})
+        self._dlq.write(
+            event,
+            reason=str(detail.get("reason") or "mapping_failed"),
+            stage=self.name,
+            detail={"source_type": definition.name, "error": str(exc), **detail},
+        )
+        _log.warning(
+            "mapping failed; event dead-lettered with parsed fields",
+            extra={
+                "source_type": definition.name,
+                "event_uid": event.event_uid,
+                "target": detail.get("target"),
+                "field_count": len(event.fields),
+            },
         )
 
     def _passthrough(self, event: ParsedEvent) -> NormalizedEvent:

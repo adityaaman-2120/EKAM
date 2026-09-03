@@ -19,6 +19,8 @@ import yaml
 from ulpf.normalize.mapper import Mapper
 from ulpf.normalize.ocsf.base import finalize
 from ulpf.normalize.validator import OcsfValidator
+from ulpf.parse.column_maps import get_column_map
+from ulpf.parse.dsl.loader import SourceRegistry
 from ulpf.parse.dsl.schema import load_source_definition
 from ulpf.parse.engines.csv_engine import CsvEngine
 from ulpf.parse.syslog_envelope import parse_syslog_envelope
@@ -111,3 +113,69 @@ def test_wrong_version_column_map_mislabels_the_row() -> None:
     # so the v10 map reads the wrong slot for src_port (and most later fields).
     assert wrong["src_port"] != "51234"
     assert wrong["session_id"] != correct["session_id"]
+
+
+# --------------------------------------------------------------------------
+# Regression: detection must route each version to its own definition, and the
+# wrong-version pairing must NOT silently produce plausible-but-shifted output.
+
+
+def _panos_registry(tmp_path: Path) -> SourceRegistry:
+    directory = tmp_path / "sources"
+    directory.mkdir()
+    for name in ("panos_traffic_v10", "panos_traffic_v11"):
+        (directory / f"{name}.yaml").write_text(
+            (_SOURCES / f"{name}.yaml").read_text("utf-8"), encoding="utf-8"
+        )
+    registry = SourceRegistry()
+    registry.load_all(directory)
+    return registry
+
+
+def test_field_count_in_detect_equals_the_column_map_length() -> None:
+    """The `field_count` guard in each YAML must track its column map length."""
+    for name, version in (("panos_traffic_v10", "10.1"), ("panos_traffic_v11", "11.0")):
+        rule = _definition(name).detect
+        counts = [
+            child.field_count.equals for child in (rule.all or []) if child.field_count is not None
+        ]
+        assert counts == [len(get_column_map("panos_traffic", version))], name
+
+
+def test_each_panos_fixture_matches_only_its_own_version(tmp_path: Path) -> None:
+    registry = _panos_registry(tmp_path)
+    v10_line = (_HERE / "fixtures" / "panos_traffic_v10.log").read_text("utf-8").splitlines()[0]
+    v11_line = (_HERE / "fixtures" / "panos_traffic_v11.log").read_text("utf-8").splitlines()[0]
+
+    assert registry.match_text(v10_line, {}).name == "panos_traffic_v10"
+    assert registry.match_text(v11_line, {}).name == "panos_traffic_v11"
+
+
+def test_wrong_version_line_is_not_claimed_by_the_other_definition(tmp_path: Path) -> None:
+    """A 51-field 11.x line must never be matched by the 47-field v10 definition.
+
+    Before the field_count guard, v10 (sorted first) silently claimed the v11
+    line and decoded it with a shifted column map — valid-looking, wrong values.
+    """
+    v11_line = (_HERE / "fixtures" / "panos_traffic_v11.log").read_text("utf-8").splitlines()[0]
+
+    # Only v10 is enabled: an 11.x line must NOT fall through to it.
+    v10_only = SourceRegistry()
+    v10_dir = tmp_path / "v10only"
+    v10_dir.mkdir()
+    (v10_dir / "panos_traffic_v10.yaml").write_text(
+        (_SOURCES / "panos_traffic_v10.yaml").read_text("utf-8"), encoding="utf-8"
+    )
+    v10_only.load_all(v10_dir)
+    assert v10_only.match_text(v11_line, {}) is None  # dead-lettered, not mis-decoded
+
+    # And the reverse: a 47-field 10.x line must not be claimed by v11.
+    v10_line = (_HERE / "fixtures" / "panos_traffic_v10.log").read_text("utf-8").splitlines()[0]
+    v11_only = SourceRegistry()
+    v11_dir = tmp_path / "v11only"
+    v11_dir.mkdir()
+    (v11_dir / "panos_traffic_v11.yaml").write_text(
+        (_SOURCES / "panos_traffic_v11.yaml").read_text("utf-8"), encoding="utf-8"
+    )
+    v11_only.load_all(v11_dir)
+    assert v11_only.match_text(v10_line, {}) is None

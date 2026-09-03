@@ -22,9 +22,16 @@ product_version: "11.x"
 priority: 20
 
 detect:
+  # HOW THE PAN-OS VERSION IS DETERMINED — by COLUMN COUNT. See
+  # panos_traffic_v10.yaml for the full rationale and its limitation. The
+  # standard 11.x TRAFFIC record is 51 comma-separated fields (10.x is 47);
+  # `field_count` MUST equal len(COLUMN_MAPS["panos_traffic","11.0"]) and the
+  # panos regression test asserts it. A custom log format matches neither
+  # definition and is dead-lettered rather than silently mis-decoded.
   all:
-    - regex: '\bpa-fw|PA-|PAN-OS\b'
     - contains: ",TRAFFIC,"
+    - regex: '\d{4}/\d{2}/\d{2}[ T]\d{2}:\d{2}:\d{2},\d+,TRAFFIC,'
+    - field_count: {delimiter: ",", equals: 51}   # PAN-OS 11.x standard TRAFFIC
 
 parse:
   envelope: syslog

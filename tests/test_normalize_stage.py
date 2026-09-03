@@ -56,6 +56,7 @@ def _full_source(*, on_failure: str = "dead_letter") -> dict[str, Any]:
                 "severity_id": {"from": "level", "map": {"notice": 1, "warning": 3}, "default": 1},
                 "time": {
                     "from": ["date", "time"],
+                    "join": " ",
                     "type": "timestamp",
                     "format": "%Y-%m-%d %H:%M:%S",
                     "tz": "UTC",
@@ -169,6 +170,41 @@ async def test_invalid_record_is_emitted_when_on_failure_warn(tmp_path: Path) ->
     assert isinstance(result, NormalizedEvent)  # emitted despite failing validation
     assert result.source_type == "test_forti"
     assert DeadLetterQueue(settings).stats()["total"] == 0
+
+
+async def test_mapping_failure_dead_letters_with_all_parsed_fields(tmp_path: Path) -> None:
+    """BUG 3: a MappingError must not discard the fields the parser extracted."""
+    settings = _settings(tmp_path)
+    bad = _full_source()
+    # A required timestamp whose source value ("notice") cannot match the format
+    # -> _coerce raises MappingError from inside the field loop.
+    bad["normalize"]["fields"]["time"] = {
+        "from": "level",
+        "type": "timestamp",
+        "format": "%Y-%m-%d %H:%M:%S",
+        "required": True,
+    }
+    stage = NormalizeStage(settings, _registry(tmp_path, bad))
+    event = _parsed(_FORTI_LINE, _FORTI_FIELDS)
+
+    result = await stage.process(event)
+
+    assert result is None  # dropped from the pipeline
+    recent = list(DeadLetterQueue(settings).iter_recent(1))
+    assert len(recent) == 1
+    entry = recent[0]
+    assert entry.stage == "normalize"
+    assert entry.reason == "invalid_timestamp"
+    assert entry.raw == event.raw
+    assert entry.detail["source_type"] == "test_forti"
+    assert entry.detail["target"] == "time"
+    # every extracted field survives into the dead letter, not just the raw bytes
+    assert entry.detail["parsed_fields"] == _FORTI_FIELDS
+    # and the record built before the failure is kept for the operator
+    partial = entry.detail["partial_ocsf"]
+    assert partial["class_uid"] == 4001
+    assert partial["src_endpoint"] == {"ip": "192.0.2.15", "port": 51234}
+    assert "time" not in partial  # failed before it was set
 
 
 async def test_first_matching_definition_wins_by_priority(tmp_path: Path) -> None:

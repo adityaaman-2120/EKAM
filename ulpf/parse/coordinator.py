@@ -4,7 +4,9 @@
 returns a :class:`~ulpf.core.models.ParsedEvent`:
 
 1. Decode the raw bytes to ``str`` with ``errors="replace"`` for detection and
-   parsing. The original bytes on the event are never touched.
+   parsing, stripping a leading UTF-8/UTF-16 BOM from that working copy (see
+   :func:`ulpf.parse.decode.decode_raw`; ``ParsedEvent.bom_stripped`` records
+   it). The original bytes on the event are never touched.
 2. :func:`~ulpf.detect.sniffer.sniff_layered` gives ``(outer, inner)``.
 3. If the outer format is syslog, strip the envelope (over the *bytes*, losslessly)
    and keep the parsed envelope on the ``ParsedEvent``.
@@ -27,6 +29,7 @@ from typing import Any
 from ulpf.core.errors import ParseError, UlpfError
 from ulpf.core.models import LogFormat, ParsedEvent, RawEvent
 from ulpf.detect.sniffer import Sniffer, sniff_layered
+from ulpf.parse.decode import decode_raw, strip_bom_bytes
 from ulpf.parse.engines.base import ParseEngine
 from ulpf.parse.engines.util import flatten
 from ulpf.parse.registry import EngineRegistry
@@ -62,13 +65,16 @@ class ParseCoordinator:
 
     def parse(self, raw_event: RawEvent) -> ParsedEvent:
         """Detect, strip, and parse ``raw_event`` into a :class:`ParsedEvent`."""
-        text = raw_event.raw.decode("utf-8", errors="replace")
+        # Decode boundary: a leading BOM is removed from this working copy only.
+        # raw_event.raw / raw_hash keep the BOM — it is part of the evidence.
+        text, bom_stripped = decode_raw(raw_event.raw)
         outer, inner = self._sniff(raw_event.source_id, text)
 
         envelope: dict[str, Any] = {}
         payload = text
         if outer == "syslog":
-            envelope, message_bytes = parse_syslog_envelope(raw_event.raw)
+            envelope_bytes = strip_bom_bytes(raw_event.raw) if bom_stripped else raw_event.raw
+            envelope, message_bytes = parse_syslog_envelope(envelope_bytes)
             payload = message_bytes.decode("utf-8", errors="replace")
             if inner in ("cef", "leef"):
                 # CEF/LEEF engines self-locate their marker; hand them the whole
@@ -95,6 +101,7 @@ class ParseCoordinator:
             fields=merged,
             envelope=envelope,
             needs_template_mining=needs_mining,
+            bom_stripped=bom_stripped,
         )
 
     def _sniff(self, source_id: str, text: str) -> tuple[str, str]:

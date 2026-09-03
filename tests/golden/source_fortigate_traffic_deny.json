@@ -27,7 +27,8 @@
       "name": "FortiGate",
       "vendor_name": "Fortinet"
     },
-    "uid": "01a05e52-f78a-7a0b-bc34-cf3ce4f6952a"
+    "uid": "01a05e52-f78a-7a0b-bc34-cf3ce4f6952a",
+    "version": "1.5.0"
   },
   "severity": "Medium",
   "severity_id": 3,

@@ -8,7 +8,9 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+import pytest
 import yaml
+from pydantic import ValidationError
 
 from ulpf.parse.dsl.loader import SourceRegistry, evaluate_detect
 from ulpf.parse.dsl.schema import DetectRule
@@ -67,6 +69,22 @@ def test_evaluate_detect_covers_every_rule_type() -> None:
     assert not evaluate_detect(
         DetectRule.model_validate({"any": [{"contains": "ZZ"}, {"starts_with": "!!"}]}), "x", fields
     )
+
+
+def test_field_count_matches_exact_min_and_max() -> None:
+    row = "a,b,c,d,e"  # 5 fields
+    exact = DetectRule.model_validate({"field_count": {"delimiter": ",", "equals": 5}})
+    assert evaluate_detect(exact, row, {})
+    assert not evaluate_detect(exact, "a,b,c", {})
+    lo = DetectRule.model_validate({"field_count": {"delimiter": ",", "min": 5}})
+    assert evaluate_detect(lo, row, {}) and not evaluate_detect(lo, "a,b,c,d", {})
+    band = DetectRule.model_validate({"field_count": {"delimiter": ",", "min": 3, "max": 5}})
+    assert evaluate_detect(band, row, {}) and not evaluate_detect(band, "a,b,c,d,e,f", {})
+
+
+def test_field_count_needs_a_bound() -> None:
+    with pytest.raises(ValidationError, match="one of 'equals' / 'min' / 'max'"):
+        DetectRule.model_validate({"field_count": {"delimiter": ","}})
 
 
 # --------------------------------------------------------------------------

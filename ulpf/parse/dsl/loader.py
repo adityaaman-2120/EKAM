@@ -30,7 +30,12 @@ from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 
 from ulpf.core.models import ParsedEvent
-from ulpf.parse.dsl.schema import DetectRule, SourceDefinition, load_source_definition
+from ulpf.parse.dsl.schema import (
+    DetectRule,
+    FieldCount,
+    SourceDefinition,
+    load_source_definition,
+)
 
 _log = logging.getLogger(__name__)
 
@@ -49,7 +54,19 @@ def evaluate_detect(rule: DetectRule, raw_text: str, fields: Mapping[str, Any]) 
         return any(evaluate_detect(child, raw_text, fields) for child in rule.any)
     if rule.field_equals is not None:
         return _field_equals(fields, rule.field_equals.name, rule.field_equals.value)
+    if rule.field_count is not None:
+        return _field_count(rule.field_count, raw_text)
     return False  # unreachable: the schema guarantees exactly one alternative
+
+
+def _field_count(rule: FieldCount, raw_text: str) -> bool:
+    """Whether ``raw_text`` splits into a field count matching ``rule``."""
+    n = raw_text.count(rule.delimiter) + 1
+    if rule.equals is not None and n != rule.equals:
+        return False
+    if rule.min is not None and n < rule.min:
+        return False
+    return not (rule.max is not None and n > rule.max)
 
 
 def _field_equals(fields: Mapping[str, Any], name: str, value: Any) -> bool:

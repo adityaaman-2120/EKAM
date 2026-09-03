@@ -6,10 +6,10 @@ builds the nested OCSF object:
 
 * **Dotted targets nest** — ``"src_endpoint.ip"`` becomes
   ``{"src_endpoint": {"ip": ...}}``.
-* **``from`` may be a list** — the first present, non-empty source field is
-  taken; when a ``format`` is given and there are several sources they are
-  concatenated (space-joined) first, so ``date`` + ``time`` fields combine into
-  one timestamp.
+* **``from`` may be a list** — with no ``join`` the first present, non-empty
+  source field is taken (coalesce); with ``join: " "`` (any separator) every
+  present source is concatenated in the listed order, so ``date`` + ``time``
+  fields combine into one timestamp string before coercion.
 * **Type coercion** — ``int`` / ``float`` / ``bool`` / ``ip`` (validated with
   :mod:`ipaddress`) / ``timestamp`` (via
   :func:`ulpf.core.timeutil.parse_timestamp`, UTC epoch nanoseconds) / ``str``.
@@ -18,6 +18,9 @@ builds the nested OCSF object:
 * **``map``** translates source values to target values verbatim, with
   ``default`` when the source is missing or unmatched.
 * **``required``** mappings that resolve to ``None`` raise ``MappingError``.
+  Any ``MappingError`` from the field loop carries ``parsed_fields`` (the full
+  extracted dict) and ``partial_ocsf`` (the record built so far) in ``detail``,
+  so the dead-letter entry shows what was parsed and where mapping stopped.
 
 **Requirement (a), at the field level:** every consumed source field is tracked;
 with ``unmapped: keep_all`` every field that was *not* consumed is copied
@@ -26,17 +29,24 @@ verbatim into ``ocsf["unmapped"]`` so nothing a parser extracted is ever lost.
 **Requirement (d):** ``metadata.uid`` is always set to the event UID and
 ``metadata.log_hash`` to the raw SHA-256, tying the OCSF record to the exact
 bytes in the bronze store.
+
+``metadata.version`` is always stamped with
+:data:`ulpf.normalize.ocsf.base.OCSF_VERSION` — the OCSF schema version every
+class definition in :mod:`ulpf.normalize.ocsf` is written against — so the
+target schema version travels in the data, not just the docs.
 """
 
 from __future__ import annotations
 
 import ipaddress
 from collections.abc import Mapping as MappingABC
+from copy import deepcopy
 from typing import Any
 
 from ulpf.core.errors import MappingError, ParseError
 from ulpf.core.models import NormalizedEvent, ParsedEvent
 from ulpf.core.timeutil import parse_timestamp
+from ulpf.normalize.ocsf.base import OCSF_VERSION
 from ulpf.parse.dsl.schema import ActivityFromSpec, FieldMapping, SourceDefinition
 
 _TRUE_STRINGS = frozenset({"true", "t", "yes", "y", "1", "on"})
@@ -70,13 +80,22 @@ class Mapper:
             if isinstance(activity, int):
                 ocsf["type_uid"] = spec.class_uid * 100 + activity
 
-        for path, mapping in spec.fields.items():
-            mapped = self._map_one(path, mapping, fields, consumed)
-            if mapped is not None:
-                _set_nested(ocsf, path, mapped)
+        try:
+            for path, mapping in spec.fields.items():
+                mapped = self._map_one(path, mapping, fields, consumed)
+                if mapped is not None:
+                    _set_nested(ocsf, path, mapped)
+        except MappingError as exc:
+            # Keep what was parsed and what was built so far — an operator seeing
+            # the dead letter must be able to tell what the parser extracted and
+            # how far the mapping got before it failed (bug: fields vanished).
+            exc.detail.setdefault("parsed_fields", dict(fields))
+            exc.detail.setdefault("partial_ocsf", deepcopy(ocsf))
+            raise
 
         _set_nested(ocsf, "metadata.uid", event_uid)  # requirement (d)
         _set_nested(ocsf, "metadata.log_hash", raw_hash)  # requirement (d)
+        _set_nested(ocsf, "metadata.version", OCSF_VERSION)  # pinned OCSF schema version
 
         self._attach_unmapped(ocsf, spec.unmapped, fields, consumed)  # requirement (a)
         return ocsf
@@ -166,16 +185,20 @@ class Mapper:
 
 
 def _resolve_source(mapping: FieldMapping, fields: MappingABC[str, Any]) -> tuple[Any, list[str]]:
-    """Return ``(value, consumed_keys)`` for a mapping's ``from`` (``value`` None if absent)."""
+    """Return ``(value, consumed_keys)`` for a mapping's ``from`` (``value`` None if absent).
+
+    ``join`` set -> concatenate every present source in listed order with that
+    separator. ``join`` unset -> coalesce: the first present, non-empty source.
+    """
     sources = [mapping.from_] if isinstance(mapping.from_, str) else list(mapping.from_)
 
-    if mapping.format is not None and len(sources) > 1:  # concat mode (date + time -> timestamp)
+    if mapping.join is not None and len(sources) > 1:  # concatenate (date + time -> timestamp)
         present = [key for key in sources if _is_present(fields.get(key))]
         if not present:
             return None, []
-        return " ".join(str(fields[key]) for key in present), present
+        return mapping.join.join(str(fields[key]) for key in present), present
 
-    for key in sources:  # first present, non-empty
+    for key in sources:  # coalesce: first present, non-empty
         if _is_present(fields.get(key)):
             return fields[key], [key]
     return None, []

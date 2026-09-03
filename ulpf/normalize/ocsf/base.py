@@ -150,9 +150,11 @@ def build_endpoint(
 def finalize(record: dict[str, Any]) -> dict[str, Any]:
     """Fill derived name fields and strip ``None`` values; returns a new dict.
 
-    Sets ``type_uid``/``type_name`` (when ``class_uid`` and ``activity_id`` are
-    present), ``class_name``, ``category_name`` and ``severity`` from the lookup
-    tables, then applies :func:`strip_none` to the whole record.
+    Sets ``type_uid``/``type_name``/``activity_name`` (when ``class_uid`` and
+    ``activity_id`` are present), ``class_name``, ``category_name`` and
+    ``severity`` from the lookup tables, then applies :func:`strip_none` to the
+    whole record. ``activity_name`` is the OCSF caption for ``activity_id`` and
+    is only filled when a source did not already map it.
     """
     out = deepcopy(record)
 
@@ -165,6 +167,8 @@ def finalize(record: dict[str, Any]) -> dict[str, Any]:
         if activity_id is not None:
             out["type_uid"] = type_uid(class_uid, activity_id)
             activity_name = ACTIVITY_NAMES.get(class_uid, {}).get(activity_id)
+            if activity_name and not out.get("activity_name"):
+                out["activity_name"] = activity_name
             if class_name is not None:
                 out["type_name"] = f"{class_name}: {activity_name}" if activity_name else class_name
 

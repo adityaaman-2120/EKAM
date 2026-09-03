@@ -1,4 +1,4 @@
-.PHONY: install dev test lint typecheck run clean up down logs ps
+.PHONY: install dev test lint format typecheck run clean up down logs ps
 
 COMPOSE ?= docker compose
 
@@ -13,6 +13,10 @@ test:
 
 lint:
 	ruff check .
+
+format:
+	ruff format .
+	ruff check --select I --fix .
 
 typecheck:
 	mypy ulpf

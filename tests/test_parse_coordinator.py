@@ -131,3 +131,46 @@ def test_parsed_event_round_trips_through_json() -> None:
     _, parsed = _parse(b'{"a":1,"b":{"c":2}}')
     restored = ParsedEvent.model_validate_json(parsed.model_dump_json())
     assert restored == parsed
+
+
+# --------------------------------------------------------------------------
+# BUG 1: a leading BOM must not misroute detection, and must not touch evidence
+
+_UTF8_BOM = b"\xef\xbb\xbf"
+_JSON_LINE = b'{"event_type":"flow","src_ip":"192.0.2.15","dest_port":443}'
+
+
+def test_utf8_bom_json_still_sniffs_as_json_and_parses() -> None:
+    raw, parsed = _parse(_UTF8_BOM + _JSON_LINE)
+    assert parsed.format == "json"  # not "csv"
+    assert parsed.bom_stripped is True
+    assert parsed.fields["src_ip"] == "192.0.2.15"
+    assert parsed.fields["dest_port"] == 443
+
+
+def test_bom_is_preserved_in_the_raw_bytes_and_hash() -> None:
+    original = _UTF8_BOM + _JSON_LINE
+    raw, parsed = _parse(original)
+    # evidence is byte-for-byte, including the BOM
+    assert raw.raw == original
+    assert parsed.raw == original
+    assert (
+        parsed.raw_hash
+        == raw.raw_hash
+        == make_raw_event(original, source_id="x", transport="file").raw_hash
+    )
+    assert parsed.raw_len == len(original)  # BOM counted
+
+
+def test_line_without_a_bom_is_unaffected() -> None:
+    _, parsed = _parse(_JSON_LINE)
+    assert parsed.format == "json"
+    assert parsed.bom_stripped is False
+    assert parsed.fields["src_ip"] == "192.0.2.15"
+
+
+def test_utf8_bom_before_a_syslog_pri_still_detects_syslog() -> None:
+    _, parsed = _parse(_UTF8_BOM + b"<134>x=1 y=2 z=3")
+    assert parsed.format == "kv"  # inner format after the syslog envelope
+    assert parsed.bom_stripped is True
+    assert parsed.envelope.get("pri") == 134

@@ -6,9 +6,11 @@
 # header with no RFC 3164 timestamp), and a header-less record is handled too.
 #
 # `date` and `time` are separate fields; `time` is built by MULTI-FIELD
-# CONCATENATION (`from: [date, time]` + a `format`), which the mapper joins with
-# a space before parsing. `proto` is already an IANA protocol NUMBER, so it maps
-# straight to connection_info.protocol_num, with a small lookup for the name.
+# CONCATENATION — `from: [date, time]` with `join: " "` joins them into
+# "YYYY-MM-DD HH:MM:SS" before the timestamp `format` parses it. (Without
+# `join:` a list `from` coalesces to the first present field instead.)
+# `proto` is already an IANA protocol NUMBER, so it maps straight to
+# connection_info.protocol_num, with a small lookup for the name.
 #
 # `unmapped: keep_all` keeps every FortiGate field the kv engine produced but
 # that we did not map (subtype, vd, service, NAT trandisp/transip/transport,
@@ -23,9 +25,11 @@ product_version: "7.x"
 priority: 20
 
 detect:
+  # Quote-insensitive: FortiOS does not always quote values, and a relay that
+  # normalises quoting would silently break a `contains: 'type="traffic"'` match.
   all:
-    - contains: 'type="traffic"'
     - contains: 'logid='
+    - regex: '\btype="?traffic"?'
 
 parse:
   envelope: syslog
@@ -118,6 +122,7 @@ normalize:
 
     time:
       from: [date, time]
+      join: " "                      # concatenate: "<date> <time>" -> one timestamp
       type: timestamp
       format: "%Y-%m-%d %H:%M:%S"
       tz: UTC

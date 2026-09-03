@@ -35,7 +35,15 @@ _ENVELOPES = Literal["none", "syslog"]
 _ENGINES = Literal["json", "kv", "csv", "dissect", "grok", "cef", "leef", "tsv"]
 _FIELD_TYPES = Literal["str", "int", "float", "bool", "ip", "timestamp"]
 _ON_FAILURE = Literal["dead_letter", "warn"]
-_DETECT_KEYS = ("contains", "regex", "starts_with", "all", "any", "field_equals")
+_DETECT_KEYS = (
+    "contains",
+    "regex",
+    "starts_with",
+    "all",
+    "any",
+    "field_equals",
+    "field_count",
+)
 
 
 class _Model(BaseModel):
@@ -51,6 +59,28 @@ class FieldEquals(_Model):
     value: Any
 
 
+class FieldCount(_Model):
+    """Match on how many ``delimiter``-separated fields the raw line splits into.
+
+    ``n = raw_line.count(delimiter) + 1``. At least one of ``equals`` / ``min`` /
+    ``max`` (both bounds inclusive) must be given. Used to tell apart positional
+    formats that carry no explicit version but have a fixed, version-specific
+    column count (e.g. PAN-OS TRAFFIC 10.x = 47 fields, 11.x = 51).
+    """
+
+    delimiter: str = Field(min_length=1)
+    equals: int | None = Field(default=None, ge=1)
+    min: int | None = Field(default=None, ge=1)
+    max: int | None = Field(default=None, ge=1)
+
+    @model_validator(mode="after")
+    def _has_a_bound(self) -> FieldCount:
+        """Require at least one of ``equals`` / ``min`` / ``max``."""
+        if self.equals is None and self.min is None and self.max is None:
+            raise ValueError("field_count needs one of 'equals' / 'min' / 'max'")
+        return self
+
+
 class DetectRule(_Model):
     """One detection rule. Exactly one of the alternatives must be set.
 
@@ -60,6 +90,7 @@ class DetectRule(_Model):
     * ``all``          — every child rule must match.
     * ``any``          — at least one child rule must match.
     * ``field_equals`` — a parsed field equals a value.
+    * ``field_count``  — the raw line splits into a given number of fields.
     """
 
     contains: str | None = None
@@ -68,6 +99,7 @@ class DetectRule(_Model):
     all: list[DetectRule] | None = None
     any: list[DetectRule] | None = None
     field_equals: FieldEquals | None = None
+    field_count: FieldCount | None = None
 
     @field_validator("regex")
     @classmethod
@@ -116,7 +148,19 @@ class ParseSpec(_Model):
 
 
 class FieldMapping(_Model):
-    """One OCSF output field, built from one or more parsed source fields."""
+    """One OCSF output field, built from one or more parsed source fields.
+
+    A list-valued ``from`` has **two** explicit behaviours, chosen by ``join``:
+
+    * **no ``join``** — *coalesce*: the first present, non-empty source field in
+      the list wins (``from: [eventtime, timestamp]`` -> whichever exists).
+    * **``join: " "``** (any string) — *concatenate*: every present source
+      field, in the order listed, joined by that separator, then coerced as one
+      value (``from: [date, time]`` + ``join: " "`` -> ``"2019-05-10 11:50:48"``
+      before ``type: timestamp`` parsing).
+
+    ``join`` is only valid with a list ``from``.
+    """
 
     from_: str | list[str] = Field(alias="from")
     type: _FIELD_TYPES = "str"
@@ -124,16 +168,19 @@ class FieldMapping(_Model):
     default: Any = None
     format: str | None = None
     tz: str | None = None
+    join: str | None = None
     required: bool = False
 
     @model_validator(mode="after")
     def _shape(self) -> FieldMapping:
-        """Validate ``from`` is non-empty and ``format``/``tz`` fit the type."""
+        """Validate ``from`` is non-empty, ``join`` fits, and ``format``/``tz`` fit the type."""
         if isinstance(self.from_, list):
             if not self.from_ or any(not item.strip() for item in self.from_):
                 raise ValueError("'from' list must be non-empty with non-blank entries")
         elif not self.from_.strip():
             raise ValueError("'from' must be a non-empty string")
+        if self.join is not None and not isinstance(self.from_, list):
+            raise ValueError("'join' only applies when 'from' is a list")
         if self.type != "timestamp" and (self.format is not None or self.tz is not None):
             raise ValueError("'format' and 'tz' only apply to type: timestamp")
         return self

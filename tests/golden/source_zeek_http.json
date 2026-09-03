@@ -1,5 +1,6 @@
 {
   "activity_id": 3,
+  "activity_name": "Get",
   "category_name": "Network Activity",
   "category_uid": 4,
   "class_name": "HTTP Activity",
@@ -32,7 +33,8 @@
       "name": "Zeek",
       "vendor_name": "The Zeek Project"
     },
-    "uid": "01a05e52-f78a-7a0b-bc34-cf3ce4f6952a"
+    "uid": "01a05e52-f78a-7a0b-bc34-cf3ce4f6952a",
+    "version": "1.5.0"
   },
   "severity": "Informational",
   "severity_id": 1,

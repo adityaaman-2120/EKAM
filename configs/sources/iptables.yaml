@@ -71,9 +71,10 @@ normalize:
       map: {TCP: 6, UDP: 17, ICMP: 1, ICMPV6: 58, "6": 6, "17": 17, "1": 1, "58": 58}
       default: 0
 
-    # Derived from a key=value log prefix token; `act` / `action` / `prefix` are
-    # all accepted (first present wins). A bare `[UFW BLOCK]` prefix leaves these
-    # at their defaults - see the LOG PREFIX note in the header.
+    # Derived from a key=value log prefix token. `from` is a list with no
+    # `join:`, so it COALESCES: `act` / `action` / `prefix`, first present wins.
+    # A bare `[UFW BLOCK]` prefix leaves these at their defaults - see the LOG
+    # PREFIX note in the header.
     action_id:
       from: [act, action, prefix]
       map:

@@ -4,7 +4,9 @@ Commands:
 
 * ``ulpf run``          — start every configured listener plus the pipeline.
 * ``ulpf version``      — print the installed version.
-* ``ulpf config show``  — print the effective merged configuration.
+* ``ulpf config show``    — print the effective merged configuration.
+* ``ulpf inspect``        — trace one raw log line through the whole pipeline.
+* ``ulpf sources verify`` — check every source definition against a sample line.
 """
 
 from __future__ import annotations
@@ -20,6 +22,8 @@ import typer
 import yaml
 
 from ulpf import __version__ as _FALLBACK_VERSION
+from ulpf.cli.inspect import inspect as _inspect_command
+from ulpf.cli.sources import sources_app
 from ulpf.config.settings import Settings, get_settings
 from ulpf.core.logging import configure_logging
 from ulpf.core.runtime import Runtime
@@ -44,6 +48,9 @@ def _check_python_version() -> None:
 app = typer.Typer(help="ULPF — Universal Log Pre-processing Framework.", no_args_is_help=True)
 config_app = typer.Typer(help="Inspect configuration.", no_args_is_help=True)
 app.add_typer(config_app, name="config")
+
+app.command("inspect")(_inspect_command)
+app.add_typer(sources_app, name="sources")
 
 
 def _resolve_version() -> str:

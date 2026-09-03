@@ -87,6 +87,7 @@ class ParsedEvent(RawEvent):
     envelope: dict[str, Any] = Field(default_factory=dict)
     template_id: str | None = None
     needs_template_mining: bool = False  # unparsed free text -> Drain3 in Phase 7
+    bom_stripped: bool = False  # a leading UTF-8/UTF-16 BOM was removed before detection
 
 
 class NormalizedEvent(BaseModel):
