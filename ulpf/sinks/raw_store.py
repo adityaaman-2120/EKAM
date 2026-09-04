@@ -126,9 +126,7 @@ class RawStore:
         for record in self._scan_records(date_str):
             yield self._record_to_event(record)
 
-    def iter_located(
-        self, date: str | dt.date | None = None
-    ) -> Iterator[tuple[RawEvent, str]]:
+    def iter_located(self, date: str | dt.date | None = None) -> Iterator[tuple[RawEvent, str]]:
         """Yield ``(event, locator)`` for every stored event.
 
         ``locator`` is ``"date=YYYY-MM-DD/events.ndjson.gz#L<n>"`` — the partition

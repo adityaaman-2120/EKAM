@@ -4,7 +4,10 @@ the raw evidence on graceful shutdown."""
 from __future__ import annotations
 
 import asyncio
+import logging
 from pathlib import Path
+
+import pytest
 
 from ulpf.config.settings import (
     IngestSettings,
@@ -85,3 +88,24 @@ async def test_runtime_without_a_signing_key_runs_with_integrity_off(tmp_path: P
     await runtime.start()
     await runtime.stop()
     assert not (tmp_path / "ledger" / LEDGER_FILENAME).exists()
+
+
+def test_missing_signing_key_reports_a_loud_reason(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    settings = _settings(tmp_path, tmp_path / "keys" / "absent.pem")
+    with caplog.at_level(logging.WARNING, logger="ulpf.core.runtime"):
+        runtime = Runtime(settings)
+
+    assert runtime.integrity_active is False
+    assert runtime.integrity_off_reason and "missing" in runtime.integrity_off_reason
+    banner = next(r.getMessage() for r in caplog.records if r.name == "ulpf.core.runtime")
+    assert "INTEGRITY LEDGER IS OFF" in banner
+    assert "ulpf keys generate" in banner
+
+
+def test_present_signing_key_reports_integrity_active(tmp_path: Path) -> None:
+    key_path = generate_keypair(tmp_path / "keys").private
+    runtime = Runtime(_settings(tmp_path, key_path))
+    assert runtime.integrity_active is True
+    assert runtime.integrity_off_reason is None

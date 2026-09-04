@@ -63,20 +63,38 @@ class _NoSignalServer(uvicorn.Server):
         return None
 
 
-def _load_signing_key(settings: Settings) -> Signer | None:
-    """Load the integrity-ledger signing key, or ``None`` (integrity self-disables)."""
+_INTEGRITY_OFF_BANNER = """
+  ============================================================================
+  ||  INTEGRITY LEDGER IS OFF  --  raw events are stored but NOT signed      ||
+  ||                                                                        ||
+  ||  reason: %-64s ||
+  ||                                                                        ||
+  ||  fix:  ulpf keys generate --set-config                                 ||
+  ||        (writes signing_key_path / public_key_path into configs/ulpf.yaml)||
+  ============================================================================
+"""
+
+
+def _load_signing_key(settings: Settings) -> tuple[Signer | None, str | None]:
+    """Return ``(signer, off_reason)``.
+
+    ``off_reason`` is a one-line human string when the integrity ledger will not
+    seal (and is ``None`` when it will). It is logged as a loud multi-line
+    WARNING here and echoed again in the startup banner, so an operator cannot
+    scroll past it and end up running with no ledger.
+    """
     integrity = settings.integrity
     if not integrity.enabled:
-        return None
+        return None, "integrity.enabled is false in configs/ulpf.yaml"
     key_path = integrity.signing_key_path
-    if key_path is None or not key_path.is_file():
-        _log.warning(
-            "integrity.enabled but no signing key at %s; the integrity ledger is OFF "
-            "(run `ulpf keys generate` and set integrity.signing_key_path)",
-            key_path,
-        )
-        return None
-    return Signer.load(key_path)
+    if key_path is None:
+        reason = "integrity.signing_key_path is not set in configs/ulpf.yaml"
+    elif not key_path.is_file():
+        reason = f"signing key file is missing: {key_path}"
+    else:
+        return Signer.load(key_path), None
+    _log.warning(_INTEGRITY_OFF_BANNER, reason)
+    return None, reason
 
 
 class Runtime:
@@ -93,7 +111,8 @@ class Runtime:
         self._sources.load_all(sources_dir)
         self._enrichers = build_enrichers(settings)
         self._enrich = EnrichmentPipeline(settings, self._enrichers)
-        self._integrity = IntegrityStage(settings, signer=_load_signing_key(settings))
+        signer, self._integrity_off_reason = _load_signing_key(settings)
+        self._integrity = IntegrityStage(settings, signer=signer)
         self._pipeline = Pipeline(
             settings,
             [
@@ -132,6 +151,16 @@ class Runtime:
     def tls_port(self) -> int | None:
         """Bound TLS port, or ``None`` when the TLS listener is disabled."""
         return int(self._tls.sockname[1]) if self._tls is not None else None
+
+    @property
+    def integrity_active(self) -> bool:
+        """Whether the integrity ledger is sealing + signing events."""
+        return self._integrity.enabled
+
+    @property
+    def integrity_off_reason(self) -> str | None:
+        """A one-line reason the integrity ledger is OFF, or ``None`` when it is active."""
+        return self._integrity_off_reason
 
     def enricher_status(self) -> list[dict[str, object]]:
         """Per-enricher name / enabled / ready / detail — surfaced on ``/health``."""

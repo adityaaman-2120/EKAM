@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import stat
 from pathlib import Path
@@ -46,6 +47,37 @@ def test_private_key_is_written_owner_only(tmp_path: Path) -> None:
     paths = _keypair(tmp_path)
     mode = stat.S_IMODE(paths.private.stat().st_mode)
     assert mode == 0o600
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX file modes only")
+def test_no_warning_when_the_key_can_be_restricted(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    with caplog.at_level(logging.WARNING, logger="ulpf.integrity.signing"):
+        _keypair(tmp_path)
+    assert not caplog.records
+
+
+def test_warns_once_when_the_key_cannot_be_restricted(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Windows-style filesystems where ``os.chmod`` can't drop group/other bits."""
+
+    def _chmod_unsupported(*_a: object, **_k: object) -> None:
+        raise NotImplementedError
+
+    monkeypatch.setattr("ulpf.integrity.signing.os.chmod", _chmod_unsupported)
+    # pretend the filesystem left the file group/world-readable
+    monkeypatch.setattr("ulpf.integrity.signing.stat.S_IMODE", lambda _mode: 0o644)
+
+    with caplog.at_level(logging.WARNING, logger="ulpf.integrity.signing"):
+        paths = _keypair(tmp_path)
+
+    assert paths.private.is_file()  # key still written
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) == 1
+    msg = warnings[0].getMessage()
+    assert "PRIVATE KEY" in msg and "deploy/keys/README.md" in msg
 
 
 def test_generate_keypair_refuses_to_clobber_without_overwrite(tmp_path: Path) -> None:
@@ -176,3 +208,34 @@ def test_cli_keys_generate_fails_cleanly_on_an_existing_key(tmp_path: Path) -> N
 
     forced = runner.invoke(app, ["keys", "generate", "--out", str(out), "--overwrite"])
     assert forced.exit_code == 0
+
+
+def test_cli_keys_generate_prints_the_exact_config_lines(tmp_path: Path) -> None:
+    out = tmp_path / "deploy" / "keys"
+    result = CliRunner().invoke(
+        app, ["keys", "generate", "--out", str(out), "--config", "nope.yaml"]
+    )
+    assert result.exit_code == 0
+    assert f"signing_key_path: {(out / PRIVATE_KEY_NAME).as_posix()}" in result.output
+    assert f"public_key_path: {(out / PUBLIC_KEY_NAME).as_posix()}" in result.output
+
+
+def test_cli_keys_generate_set_config_writes_the_paths_in_place(tmp_path: Path) -> None:
+    out = tmp_path / "deploy" / "keys"
+    config = tmp_path / "ulpf.yaml"
+    config.write_text(
+        "integrity:\n"
+        "  enabled: true\n"
+        "  signing_key_path: null        # generate me\n"
+        "  public_key_path: null\n",
+        encoding="utf-8",
+    )
+
+    result = CliRunner().invoke(
+        app, ["keys", "generate", "--out", str(out), "--config", str(config), "--set-config"]
+    )
+    assert result.exit_code == 0
+    text = config.read_text(encoding="utf-8")
+    assert f"  signing_key_path: {(out / PRIVATE_KEY_NAME).as_posix()}\n" in text
+    assert f"  public_key_path: {(out / PUBLIC_KEY_NAME).as_posix()}\n" in text
+    assert "enabled: true" in text  # untouched lines preserved

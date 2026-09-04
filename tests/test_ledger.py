@@ -6,7 +6,6 @@ import hashlib
 import json
 from pathlib import Path
 
-import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from ulpf.config.settings import Settings, StorageSettings
@@ -172,7 +171,7 @@ def test_verify_chain_catches_a_corrupted_line_at_its_sequence_number(tmp_path: 
     # tamper with the batch_root on entry seq=2 -> its chained_root no longer
     # recomputes, so the chain breaks exactly there.
     row = json.loads(path.read_text(encoding="utf-8").splitlines()[2])
-    row["batch_root"] = ("ff" * 32)
+    row["batch_root"] = "ff" * 32
     _rewrite_line(path, 2, json.dumps(row, separators=(",", ":")))
 
     assert IntegrityLedger(_settings(tmp_path), signer).verify_chain() == (False, 2)

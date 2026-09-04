@@ -18,10 +18,10 @@ from ulpf.config.settings import (
     Settings,
     StorageSettings,
 )
+from ulpf.integrity.hashing import make_raw_event
 from ulpf.integrity.index import IntegrityIndex
 from ulpf.integrity.ledger import LEDGER_FILENAME, IntegrityLedger
 from ulpf.integrity.signing import Signer, generate_keypair
-from ulpf.integrity.hashing import make_raw_event
 from ulpf.sinks.raw_store import RawStore
 
 runner = CliRunner()
@@ -30,7 +30,7 @@ _REPO = Path(__file__).resolve().parent.parent
 _FORTI_LINES = [
     b'<189>date=2026-08-15 time=22:14:%02d level="warning" devname="FGT" '
     b'logid="0000000013" type="traffic" subtype="forward" srcip=10.0.0.%d srcport=51000 '
-    b"dstip=8.8.8.8 dstport=443 proto=6 action=\"deny\" policyid=9 sentbyte=0 rcvdbyte=0" % (i, i)
+    b'dstip=8.8.8.8 dstport=443 proto=6 action="deny" policyid=9 sentbyte=0 rcvdbyte=0' % (i, i)
     for i in range(5)
 ]
 
@@ -185,12 +185,15 @@ def test_verify_roundtrip_is_100_percent_for_an_untouched_store(populated) -> No
     _settings_, events = populated
     result = runner.invoke(app, ["verify", "roundtrip"])
     assert result.exit_code == 0
-    assert "requirement (a) satisfied" in result.stdout
+    assert "REQUIREMENT (a): SATISFIED" in result.stdout
 
     body = json.loads(runner.invoke(app, ["verify", "roundtrip", "--json"]).stdout)
     assert body["total"] == len(events)
-    assert body["lossless"] == body["total"]
-    assert body["rate_percent"] == 100.0
+    assert body["requirement_a_satisfied"] is True
+    assert body["byte_lossless"] == body["total"] and body["byte_lossless_rate"] == 100.0
+    assert body["reparse_stable_rate"] == 100.0
+    assert body["renormalize_stable_rate"] == 100.0
+    assert body["dead_letter_count"] == 0
 
 
 def test_verify_roundtrip_detects_storage_tampering(populated) -> None:  # noqa: ANN001
@@ -200,7 +203,56 @@ def test_verify_roundtrip_detects_storage_tampering(populated) -> None:  # noqa:
     result = runner.invoke(app, ["verify", "roundtrip", "--json"])
     assert result.exit_code == 1
     body = json.loads(result.stdout)
-    assert body["lossless"] == body["total"] - 1
-    assert body["rate_percent"] < 100.0
-    assert body["failures"][0]["event_uid"] == events[3].event_uid
-    assert "altered in storage" in body["failures"][0]["reason"]
+    assert body["requirement_a_satisfied"] is False
+    assert body["byte_lossless"] == body["total"] - 1
+    assert body["byte_lossless_rate"] < 100.0
+    failure = body["failures"][0]
+    assert failure["event_uid"] == events[3].event_uid
+    assert failure["category"] == "byte"
+    assert "altered in storage" in failure["reason"]
+
+
+_GOOD_FORTI = (
+    b'<189>date=2026-08-15 time=22:14:15 devname="FGT" logid="0000000013" '
+    b'type="traffic" subtype="forward" srcip=10.0.0.%d srcport=51000 '
+    b'dstip=8.8.8.8 dstport=443 proto=6 action="deny" policyid=9 sentbyte=0 rcvdbyte=0'
+)
+# same source (matches fortigate detect) but date/time cannot be parsed as a
+# timestamp -> the required `time` mapping raises MappingError -> dead-lettered.
+_BAD_FORTI = (
+    b'<189>date=not-a-date time=not-a-time devname="FGT" logid="0000000013" '
+    b'type="traffic" subtype="forward" srcip=10.0.0.%d srcport=51000 '
+    b'dstip=8.8.8.8 dstport=443 proto=6 action="deny" policyid=9 sentbyte=0 rcvdbyte=0'
+)
+
+
+def test_verify_roundtrip_separates_evidence_loss_from_normalization_gap(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every raw hash is intact; half the events fail normalization.
+
+    Requirement (a) is byte-level -> SATISFIED at 100%. The normalization gap is
+    reported separately as dead_letter_count, never dragging (a) down.
+    """
+    settings = _settings(tmp_path)
+    monkeypatch.setattr(verify_mod, "_load_settings", lambda: settings)
+    store = RawStore(settings)
+    for i in range(6):
+        store.write(make_raw_event(_GOOD_FORTI % i, source_id="t", transport="udp"))
+        store.write(make_raw_event(_BAD_FORTI % i, source_id="t", transport="udp"))
+    store.flush()
+
+    result = runner.invoke(app, ["verify", "roundtrip"])
+    assert "REQUIREMENT (a): SATISFIED" in result.stdout
+
+    body = json.loads(runner.invoke(app, ["verify", "roundtrip", "--json"]).stdout)
+    assert body["total"] == 12
+    assert body["requirement_a_satisfied"] is True
+    assert body["byte_lossless"] == 12 and body["byte_lossless_rate"] == 100.0
+    assert body["reparse_stable"] == 12 and body["reparse_stable_rate"] == 100.0
+    # the normalization gap is shown ONLY here — not folded into requirement (a)
+    assert body["dead_letter_count"] == 6
+    assert body["normalized_originally"] == 6
+    assert body["renormalize_stable"] == 6 and body["renormalize_stable_rate"] == 100.0
+    # no byte/reparse/renormalize failures — dead-letters are counted, not "failed"
+    assert body["failures"] == []

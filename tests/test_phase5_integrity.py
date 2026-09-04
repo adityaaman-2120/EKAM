@@ -5,7 +5,8 @@
 * corrupt one stored raw event -> ``verify events`` names *exactly* that
   ``event_uid``;
 * corrupt one ledger line -> ``verify_chain`` names *exactly* that sequence;
-* the lossless round-trip rate is 100% on clean data (requirement (a));
+* on clean data the byte-lossless rate is 100% -> requirement (a) SATISFIED,
+  with reparse/renormalize stability also 100% and no dead letters;
 * benchmark the integrity stage's throughput cost (printed, and written to
   ``bench/integrity_overhead.txt`` for the presentation).
 """
@@ -22,8 +23,7 @@ from pathlib import Path
 import pytest
 
 from ulpf.cli.verify import run_verify_chain, run_verify_events, run_verify_roundtrip
-from ulpf.config.settings import ParseSettings, Settings, StorageSettings
-from ulpf.config.settings import IntegritySettings
+from ulpf.config.settings import IntegritySettings, ParseSettings, Settings, StorageSettings
 from ulpf.integrity.hashing import make_raw_event
 from ulpf.integrity.ledger import LEDGER_FILENAME, IntegrityLedger
 from ulpf.integrity.signing import Signer, generate_keypair
@@ -37,7 +37,7 @@ def _lines(n: int) -> list[bytes]:
     """Distinct synthetic FortiGate traffic lines (RFC 5737 addresses)."""
     return [
         (
-            f'<189>date=2026-09-04 time=10:{i // 60 % 60:02d}:{i % 60:02d} '
+            f"<189>date=2026-09-04 time=10:{i // 60 % 60:02d}:{i % 60:02d} "
             f'devname="FGT" logid="0000000013" type="traffic" subtype="forward" '
             f'level="warning" srcip=192.0.2.{i % 254 + 1} srcport={10000 + i} '
             f"dstip=198.51.100.{i % 254 + 1} dstport=443 proto=6 "
@@ -161,8 +161,11 @@ async def test_roundtrip_rate_is_100_percent_on_clean_data(sealed) -> None:  # n
     report = run_verify_roundtrip(settings, date=None)
 
     assert report.total == 1000
-    assert report.lossless == 1000
-    assert report.rate_percent == 100.0
+    assert report.requirement_a_satisfied is True
+    assert report.byte_lossless == 1000 and report.byte_lossless_rate == 100.0
+    assert report.reparse_stable_rate == 100.0
+    assert report.renormalize_stable_rate == 100.0
+    assert report.dead_letter_count == 0
     assert report.failures == []
 
 

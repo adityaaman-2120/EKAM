@@ -11,10 +11,19 @@ green/red table:
   ``event_uid`` and file locator).
 * ``ulpf verify event <uid>`` — full detail for one event, including the Merkle
   authentication path.
-* ``ulpf verify roundtrip`` — re-run parse + normalize on every stored raw event
-  and assert the derivation is byte-identical, with the raw bytes carried
-  through untouched. Reports the **lossless round-trip rate** — the proof of
-  requirement (a).
+* ``ulpf verify roundtrip`` — re-derive every stored raw event and report three
+  **independent** properties, never conflated:
+
+  - ``byte_lossless_rate`` — the stored raw re-reads and re-hashes to the
+    recorded SHA-256. **This alone is requirement (a)** (no information loss),
+    and it is the panel headline.
+  - ``reparse_stable_rate`` — parsing the raw twice yields the identical field
+    dict (parser determinism).
+  - ``renormalize_stable_rate`` — normalizing twice yields the identical OCSF
+    record, computed **only over events that normalized successfully the first
+    time**. Events whose mapping failed are excluded from that denominator and
+    counted as ``dead_letter_count`` — a mapping failure is a parser-coverage
+    gap, not evidence loss, so it must not drag down requirement (a).
 
 Every command takes ``--json`` for machine-readable output and exits non-zero on
 any failure.
@@ -46,7 +55,9 @@ from ulpf.parse.coordinator import ParseCoordinator
 from ulpf.parse.dsl.loader import SourceRegistry
 from ulpf.sinks.raw_store import RawStore
 
-verify_app = typer.Typer(help="Verify ledger integrity and lossless round-trip.", no_args_is_help=True)
+verify_app = typer.Typer(
+    help="Verify ledger integrity and lossless round-trip.", no_args_is_help=True
+)
 
 _OK = "[bold green]PASS[/]"
 _BAD = "[bold red]FAIL[/]"
@@ -112,8 +123,13 @@ def run_verify_chain(settings: Settings, *, show_progress: bool) -> ChainReport:
     ledger = _load_ledger(settings)
     if ledger is None:
         return ChainReport(
-            ledger_present=False, entries_total=0, checked=0, ok=True,
-            broken_at=None, broken_reason="no ledger file found", head_hex="",
+            ledger_present=False,
+            entries_total=0,
+            checked=0,
+            ok=True,
+            broken_at=None,
+            broken_reason="no ledger file found",
+            head_hex="",
         )
 
     total = ledger.entry_count_on_disk()
@@ -143,30 +159,50 @@ def run_verify_chain(settings: Settings, *, show_progress: bool) -> ChainReport:
 
 def _render_chain(console: Console, report: ChainReport) -> None:
     if not report.ledger_present:
-        console.print(Panel("[yellow]No integrity ledger found.[/] Nothing sealed yet, "
-                            "or `integrity.signing_key_path` is not configured.",
-                            title="verify chain", border_style="yellow"))
+        console.print(
+            Panel(
+                "[yellow]No integrity ledger found.[/] Nothing sealed yet, "
+                "or `integrity.signing_key_path` is not configured.",
+                title="verify chain",
+                border_style="yellow",
+            )
+        )
         return
     if report.entries_total == 0:
-        console.print(Panel("[yellow]Ledger is empty[/] — no batches have been sealed yet.",
-                            title="verify chain", border_style="yellow"))
+        console.print(
+            Panel(
+                "[yellow]Ledger is empty[/] — no batches have been sealed yet.",
+                title="verify chain",
+                border_style="yellow",
+            )
+        )
         return
     if report.ok:
-        console.print(Panel(
-            f"[bold green]LEDGER INTACT[/]\n"
-            f"{report.entries_total} entries checked · every chained root recomputes · "
-            f"every signature valid\nhead = [cyan]{report.head_hex[:16]}…[/]",
-            title="verify chain", border_style="green"))
+        console.print(
+            Panel(
+                f"[bold green]LEDGER INTACT[/]\n"
+                f"{report.entries_total} entries checked · every chained root recomputes · "
+                f"every signature valid\nhead = [cyan]{report.head_hex[:16]}…[/]",
+                title="verify chain",
+                border_style="green",
+            )
+        )
     else:
-        console.print(Panel(
-            f"[bold red]CHAIN BROKEN AT SEQ {report.broken_at}[/]\n"
-            f"{report.broken_reason}\n"
-            f"(verified {report.checked - 1} entries before the break)",
-            title="verify chain", border_style="red"))
+        console.print(
+            Panel(
+                f"[bold red]CHAIN BROKEN AT SEQ {report.broken_at}[/]\n"
+                f"{report.broken_reason}\n"
+                f"(verified {report.checked - 1} entries before the break)",
+                title="verify chain",
+                border_style="red",
+            )
+        )
 
 
 @verify_app.command("chain")
-def verify_chain(json_out: bool = typer.Option(False, "--json", help="Machine-readable output.")) -> None:
+def verify_chain(
+    json_out: bool = typer.Option(False, "--json", help="Machine-readable output."),
+) -> None:
     """Verify every ledger entry's chained root and signature."""
     report = run_verify_chain(_load_settings(), show_progress=not json_out)
     if json_out:
@@ -256,8 +292,9 @@ def _failure(proof: EventProof, locator: str) -> EventFailure:
 
 def _render_events(console: Console, report: EventsReport) -> None:
     if not report.ledger_present:
-        console.print("[yellow]No ledger — checking raw-hash integrity only "
-                      "(no Merkle inclusion proofs).[/]")
+        console.print(
+            "[yellow]No ledger — checking raw-hash integrity only (no Merkle inclusion proofs).[/]"
+        )
     if report.failures:
         table = Table(title="verify events — FAILURES", border_style="red", show_lines=True)
         table.add_column("event_uid", style="cyan", no_wrap=True)
@@ -268,7 +305,8 @@ def _render_events(console: Console, report: EventsReport) -> None:
         table.add_column("reason", style="red")
         for failure in report.failures:
             table.add_row(
-                failure.event_uid, failure.locator,
+                failure.event_uid,
+                failure.locator,
                 _OK if failure.hash_ok else _BAD,
                 _OK if failure.proof_ok else _BAD,
                 _OK if failure.signature_ok else _BAD,
@@ -278,16 +316,22 @@ def _render_events(console: Console, report: EventsReport) -> None:
 
     style = "green" if report.failed == 0 else "red"
     verdict = "ALL EVENTS VERIFIED" if report.failed == 0 else f"{report.failed} EVENT(S) FAILED"
-    console.print(Panel(
-        f"[bold {style}]{verdict}[/]\n"
-        f"checked [bold]{report.checked}[/] · passed [green]{report.passed}[/] · "
-        f"failed [red]{report.failed}[/]",
-        title="verify events", border_style=style))
+    console.print(
+        Panel(
+            f"[bold {style}]{verdict}[/]\n"
+            f"checked [bold]{report.checked}[/] · passed [green]{report.passed}[/] · "
+            f"failed [red]{report.failed}[/]",
+            title="verify events",
+            border_style=style,
+        )
+    )
 
 
 @verify_app.command("events")
 def verify_events(
-    date: str | None = typer.Option(None, "--date", help="Restrict to one ingest date (YYYY-MM-DD)."),
+    date: str | None = typer.Option(
+        None, "--date", help="Restrict to one ingest date (YYYY-MM-DD)."
+    ),
     json_out: bool = typer.Option(False, "--json", help="Machine-readable output."),
 ) -> None:
     """Re-hash and Merkle-verify every raw event in the bronze store."""
@@ -318,9 +362,7 @@ def _event_detail_dict(proof: EventProof) -> dict[str, Any]:
         "recomputed_hash": proof.recomputed_hash.hex() if proof.recomputed_hash else None,
         "batch_root": proof.batch_root.hex() if proof.batch_root else None,
         "chained_root": proof.chained_root.hex() if proof.chained_root else None,
-        "merkle_path": [
-            {"sibling": sibling.hex(), "side": side} for sibling, side in proof.proof
-        ],
+        "merkle_path": [{"sibling": sibling.hex(), "side": side} for sibling, side in proof.proof],
         "reason": proof.reason,
     }
 
@@ -352,8 +394,9 @@ def _render_event(console: Console, proof: EventProof) -> None:
     style = "green" if proof.ok else "red"
     verdict = "EVENT VERIFIED" if proof.ok else "EVENT VERIFICATION FAILED"
     detail = "" if proof.ok else f"\n{proof.reason or 'see the checks above'}"
-    console.print(Panel(f"[bold {style}]{verdict}[/]{detail}",
-                        title="verify event", border_style=style))
+    console.print(
+        Panel(f"[bold {style}]{verdict}[/]{detail}", title="verify event", border_style=style)
+    )
 
 
 @verify_app.command("event")
@@ -373,7 +416,7 @@ def verify_event(
 
 
 # ======================================================================
-# verify roundtrip  — the proof of requirement (a)
+# verify roundtrip  — three independent properties, never conflated
 # ======================================================================
 
 
@@ -381,21 +424,76 @@ def verify_event(
 class RoundtripFailure:
     event_uid: str
     locator: str
+    category: str  # "byte" | "reparse" | "renormalize"
     reason: str
+
+
+@dataclass
+class _Outcome:
+    """Per-event result of the round-trip re-derivation."""
+
+    byte_lossless: bool
+    reparse_stable: bool
+    normalized_originally: bool  # a source matched AND the 1st normalize() succeeded
+    renormalize_stable: bool  # meaningful only when normalized_originally
+    dead_lettered: bool  # a source matched but normalize() raised MappingError
+    no_source_match: bool
+    note: str  # short reason for the (first) non-green property
 
 
 @dataclass
 class RoundtripReport:
     total: int
-    lossless: int
-    rate_percent: float
+    byte_lossless: int
+    reparse_stable: int
+    normalized_originally: int  # denominator for renormalize_stable_rate
+    renormalize_stable: int
+    dead_letter_count: int
+    no_source_match_count: int
     failures: list[RoundtripFailure] = field(default_factory=list)
+
+    def _rate(self, numerator: int, denominator: int) -> float:
+        return 100.0 if denominator == 0 else numerator / denominator * 100.0
+
+    @property
+    def byte_lossless_rate(self) -> float:
+        return self._rate(self.byte_lossless, self.total)
+
+    @property
+    def reparse_stable_rate(self) -> float:
+        return self._rate(self.reparse_stable, self.total)
+
+    @property
+    def renormalize_stable_rate(self) -> float:
+        return self._rate(self.renormalize_stable, self.normalized_originally)
+
+    @property
+    def requirement_a_satisfied(self) -> bool:
+        """Requirement (a) is byte-level and byte-level ONLY."""
+        return self.byte_lossless == self.total
+
+    @property
+    def all_green(self) -> bool:
+        return (
+            self.requirement_a_satisfied
+            and self.reparse_stable == self.total
+            and self.renormalize_stable == self.normalized_originally
+            and self.dead_letter_count == 0
+        )
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "total": self.total,
-            "lossless": self.lossless,
-            "rate_percent": round(self.rate_percent, 4),
+            "requirement_a_satisfied": self.requirement_a_satisfied,
+            "byte_lossless": self.byte_lossless,
+            "byte_lossless_rate": round(self.byte_lossless_rate, 4),
+            "reparse_stable": self.reparse_stable,
+            "reparse_stable_rate": round(self.reparse_stable_rate, 4),
+            "normalized_originally": self.normalized_originally,
+            "renormalize_stable": self.renormalize_stable,
+            "renormalize_stable_rate": round(self.renormalize_stable_rate, 4),
+            "dead_letter_count": self.dead_letter_count,
+            "no_source_match_count": self.no_source_match_count,
             "failures": [asdict(failure) for failure in self.failures],
         }
 
@@ -403,7 +501,8 @@ class RoundtripReport:
 def _parse_signature(parsed: ParsedEvent) -> str:
     return json.dumps(
         {"format": parsed.format, "fields": parsed.fields, "envelope": parsed.envelope},
-        sort_keys=True, default=str,
+        sort_keys=True,
+        default=str,
     )
 
 
@@ -416,51 +515,103 @@ def _normalize_signature(definition: Any, parsed: ParsedEvent) -> str:
     return json.dumps(ocsf, sort_keys=True, default=str)
 
 
-def _roundtrip_one(
-    event: RawEvent, coordinator: ParseCoordinator, registry: SourceRegistry
-) -> str | None:
-    """Return ``None`` when the event round-trips losslessly, else a failure reason."""
-    if sha256_hex(event.raw) != event.raw_hash:
-        return "raw bytes were altered in storage"
+def _check_reparse(
+    event: RawEvent, coordinator: ParseCoordinator
+) -> tuple[ParsedEvent | None, bool, str]:
+    """``(parsed, stable, note)`` — parse the raw twice and compare."""
     try:
         first = coordinator.parse(event)
         second = coordinator.parse(event)
     except ParseError as exc:
-        return f"parse failed: {exc}"
+        return None, False, f"parse failed: {exc}"
     if first.raw != event.raw:
-        return "raw bytes changed while parsing"
+        return first, False, "raw bytes changed while parsing"
     if _parse_signature(first) != _parse_signature(second):
-        return "parse is not deterministic"
+        return first, False, "parse is not deterministic"
+    return first, True, ""
 
-    definition = registry.match(first)
-    if definition is None:
-        return None  # no source matched: raw preserved + parse deterministic is enough
+
+def _check_renormalize(definition: Any, parsed: ParsedEvent) -> tuple[bool, bool, str]:
+    """``(normalized_originally, stable, note)`` — normalize twice and compare."""
     try:
-        if _normalize_signature(definition, first) != _normalize_signature(definition, second):
-            return "normalization is not deterministic"
+        first = _normalize_signature(definition, parsed)
     except MappingError as exc:
-        return f"normalization failed: {exc}"
-    return None
+        return False, False, f"normalization failed (dead-lettered): {exc}"
+    try:
+        second = _normalize_signature(definition, parsed)
+    except MappingError:
+        return True, False, "normalization is not deterministic (2nd pass raised)"
+    if first != second:
+        return True, False, "normalization is not deterministic"
+    return True, True, ""
+
+
+def _roundtrip_one(
+    event: RawEvent, coordinator: ParseCoordinator, registry: SourceRegistry
+) -> _Outcome:
+    """Re-derive one event, scoring the three properties independently."""
+    byte_lossless = sha256_hex(event.raw) == event.raw_hash
+    note = "" if byte_lossless else "raw bytes were altered in storage"
+
+    parsed, reparse_stable, parse_note = _check_reparse(event, coordinator)
+    note = note or parse_note
+
+    normalized_originally = renormalize_stable = dead_lettered = no_source_match = False
+    if parsed is not None:
+        definition = registry.match(parsed)
+        if definition is None:
+            no_source_match = True
+        else:
+            normalized_originally, renormalize_stable, norm_note = _check_renormalize(
+                definition, parsed
+            )
+            dead_lettered = not normalized_originally
+            note = note or norm_note
+
+    return _Outcome(
+        byte_lossless,
+        reparse_stable,
+        normalized_originally,
+        renormalize_stable,
+        dead_lettered,
+        no_source_match,
+        note,
+    )
 
 
 def run_verify_roundtrip(settings: Settings, date: str | None) -> RoundtripReport:
-    """Re-derive parse+normalize for every stored raw event and check it is identical."""
+    """Re-derive every stored raw event; score byte / reparse / renormalize separately."""
     store = RawStore(settings)
     coordinator = ParseCoordinator()
     registry = _load_registry(settings)
 
-    total = lossless = 0
-    failures: list[RoundtripFailure] = []
+    report = RoundtripReport(0, 0, 0, 0, 0, 0, 0)
     for event, locator in store.iter_located(date):
-        total += 1
-        reason = _roundtrip_one(event, coordinator, registry)
-        if reason is None:
-            lossless += 1
-        else:
-            failures.append(RoundtripFailure(event.event_uid, locator, reason))
+        outcome = _roundtrip_one(event, coordinator, registry)
+        report.total += 1
+        report.byte_lossless += outcome.byte_lossless
+        report.reparse_stable += outcome.reparse_stable
+        report.normalized_originally += outcome.normalized_originally
+        report.renormalize_stable += outcome.renormalize_stable and outcome.normalized_originally
+        report.dead_letter_count += outcome.dead_lettered
+        report.no_source_match_count += outcome.no_source_match
+        _record_failure(report, event.event_uid, locator, outcome)
+    return report
 
-    rate = 100.0 if total == 0 else (lossless / total) * 100.0
-    return RoundtripReport(total, lossless, rate, failures)
+
+def _record_failure(
+    report: RoundtripReport, event_uid: str, locator: str, outcome: _Outcome
+) -> None:
+    """Add a categorised failure row for a byte / reparse / renormalize break (not dead-letters)."""
+    if not outcome.byte_lossless:
+        category = "byte"
+    elif not outcome.reparse_stable:
+        category = "reparse"
+    elif outcome.normalized_originally and not outcome.renormalize_stable:
+        category = "renormalize"
+    else:
+        return
+    report.failures.append(RoundtripFailure(event_uid, locator, category, outcome.note))
 
 
 def _render_roundtrip(console: Console, report: RoundtripReport) -> None:
@@ -468,32 +619,59 @@ def _render_roundtrip(console: Console, report: RoundtripReport) -> None:
         table = Table(title="round-trip FAILURES", border_style="red", show_lines=True)
         table.add_column("event_uid", style="cyan", no_wrap=True)
         table.add_column("locator")
+        table.add_column("category")
         table.add_column("reason", style="red")
         for failure in report.failures[:50]:
-            table.add_row(failure.event_uid, failure.locator, failure.reason)
+            table.add_row(failure.event_uid, failure.locator, failure.category, failure.reason)
         console.print(table)
 
-    perfect = report.lossless == report.total
-    style = "green" if perfect else "red"
-    console.print(Panel(
-        f"[bold {style}]LOSSLESS ROUND-TRIP RATE: {report.rate_percent:.2f}%[/]\n"
-        f"{report.lossless} / {report.total} stored raw events re-derive byte-identically "
-        f"with their bytes intact\n"
-        + ("[bold green]requirement (a) satisfied — complete raw data preserved, "
-           "no information loss[/]" if perfect
-           else "[bold red]requirement (a) NOT satisfied — see failures above[/]"),
-        title="verify roundtrip", border_style=style))
+    req_a = report.requirement_a_satisfied
+    head = (
+        "[bold green]REQUIREMENT (a): SATISFIED[/] — complete raw data preserved"
+        if req_a
+        else "[bold red]REQUIREMENT (a): NOT SATISFIED[/] — stored raw bytes do not re-hash"
+    )
+    renorm_denom = report.normalized_originally
+    lines = [
+        head,
+        "",
+        f"  byte-lossless      [bold]{report.byte_lossless_rate:6.2f}%[/]  "
+        f"({report.byte_lossless}/{report.total})   <- requirement (a)",
+        f"  reparse-stable     [bold]{report.reparse_stable_rate:6.2f}%[/]  "
+        f"({report.reparse_stable}/{report.total})   parser determinism",
+        f"  renormalize-stable [bold]{report.renormalize_stable_rate:6.2f}%[/]  "
+        f"({report.renormalize_stable}/{renorm_denom})   over events that normalized",
+    ]
+    if report.dead_letter_count:
+        lines.append(
+            f"  dead-lettered      [yellow]{report.dead_letter_count}[/]        "
+            "source matched but mapping failed — parser-coverage gap, NOT evidence loss"
+        )
+    if report.no_source_match_count:
+        lines.append(
+            f"  no source match   [dim]{report.no_source_match_count}[/]        "
+            "excluded from the renormalize denominator"
+        )
+    console.print(
+        Panel(
+            "\n".join(lines),
+            title="verify roundtrip",
+            border_style="green" if req_a else "red",
+        )
+    )
 
 
 @verify_app.command("roundtrip")
 def verify_roundtrip(
-    date: str | None = typer.Option(None, "--date", help="Restrict to one ingest date (YYYY-MM-DD)."),
+    date: str | None = typer.Option(
+        None, "--date", help="Restrict to one ingest date (YYYY-MM-DD)."
+    ),
     json_out: bool = typer.Option(False, "--json", help="Machine-readable output."),
 ) -> None:
-    """Re-run parse+normalize on every stored raw event; report the lossless rate."""
+    """Re-derive every stored raw event; report byte / reparse / renormalize rates."""
     report = run_verify_roundtrip(_load_settings(), date)
     if json_out:
         typer.echo(json.dumps(report.to_dict(), indent=2))
     else:
         _render_roundtrip(Console(), report)
-    raise typer.Exit(code=0 if report.lossless == report.total else 1)
+    raise typer.Exit(code=0 if report.all_green else 1)

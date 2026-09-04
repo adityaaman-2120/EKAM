@@ -17,6 +17,17 @@ and engineering rules.
   air-gapped deployment cannot drift apart. `ulpf run` logs a warning if the
   running interpreter is not 3.11.
 
+## Dev setup
+
+```bash
+pip install -e ".[dev]"
+pre-commit install     # one-time: runs `ruff format` + `ruff check --fix` on every commit
+```
+
+CI enforces the same: a `ruff format --check .` step runs **before** lint and
+fails the build on any drift. `make format` fixes it locally; `make
+format-check` verifies without writing.
+
 ## Target schema
 
 - **OCSF 1.5.0.** Every normalized event is mapped to OCSF 1.5.0 and carries the

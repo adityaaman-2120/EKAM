@@ -34,8 +34,12 @@ integrity:
   enabled: true
   batch_size: 1000              # seal a batch after this many events...
   batch_timeout_seconds: 10     # ...or after this long, whichever comes first
-  signing_key_path: null        # Ed25519 private key (ulpf keys generate); null = ledger OFF
-  public_key_path: null         # public key for `ulpf verify`; null = derive from signing_key_path
+  # Ed25519 keys from `ulpf keys generate --out deploy/keys/`. The private key
+  # is gitignored — generate it once per deployment. If the file is missing,
+  # `ulpf run` prints a loud INTEGRITY LEDGER IS OFF banner and keeps running
+  # without sealing (raw events are still stored; they are just not signed).
+  signing_key_path: deploy/keys/ulpf_ed25519_private.pem
+  public_key_path: deploy/keys/ulpf_ed25519_public.pem
 
 enrich:
   # Optional MaxMind GeoLite2 databases. Leave null to run without geo/ASN

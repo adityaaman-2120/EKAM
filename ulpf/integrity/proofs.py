@@ -84,7 +84,11 @@ class ProofBuilder:
         event = self._store.read_by_uid(event_uid)
         if event is None:
             return EventProof(
-                event_uid, found=False, hash_ok=False, proof_ok=False, signature_ok=False,
+                event_uid,
+                found=False,
+                hash_ok=False,
+                proof_ok=False,
+                signature_ok=False,
                 reason="event not found in the bronze store",
             )
 
@@ -95,8 +99,13 @@ class ProofBuilder:
         location = self._index.lookup(event_uid) if self._index is not None else None
         if location is None or location[0] not in self._entries:
             return EventProof(
-                event_uid, found=False, hash_ok=hash_ok, proof_ok=False, signature_ok=False,
-                recorded_hash=recorded, recomputed_hash=recomputed,
+                event_uid,
+                found=False,
+                hash_ok=hash_ok,
+                proof_ok=False,
+                signature_ok=False,
+                recorded_hash=recorded,
+                recomputed_hash=recomputed,
                 reason="no sealed ledger batch indexes this event",
             )
 
@@ -110,10 +119,18 @@ class ProofBuilder:
             and self._ledger.verifier.verify(entry.chained_root, entry.signature)
         )
         return EventProof(
-            event_uid, found=True, hash_ok=hash_ok, proof_ok=proof_ok,
-            signature_ok=bool(signature_ok), ledger_seq=seq, leaf_index=leaf_index,
-            batch_root=entry.batch_root, chained_root=entry.chained_root,
-            recorded_hash=recorded, recomputed_hash=recomputed, proof=proof,
+            event_uid,
+            found=True,
+            hash_ok=hash_ok,
+            proof_ok=proof_ok,
+            signature_ok=bool(signature_ok),
+            ledger_seq=seq,
+            leaf_index=leaf_index,
+            batch_root=entry.batch_root,
+            chained_root=entry.chained_root,
+            recorded_hash=recorded,
+            recomputed_hash=recomputed,
+            proof=proof,
         )
 
     def _batch_leaves(self, seq: int) -> list[bytes]:

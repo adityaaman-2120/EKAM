@@ -1,0 +1,12 @@
+# Local pre-commit hooks — mirror the CI "format check" + "lint" steps so drift
+# is caught before it is pushed. One-time setup:  pre-commit install
+#
+# Uses the ruff-pre-commit mirror; keep `rev` in step with the `ruff` pin in
+# pyproject.toml's [project.optional-dependencies] dev list.
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.5
+    hooks:
+      - id: ruff-format
+      - id: ruff-check
+        args: [--fix]

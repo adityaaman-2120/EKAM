@@ -19,16 +19,21 @@ WHY Ed25519 rather than RSA or ECDSA-P256:
   so signatures are reproducible in tests and audits.
 
 Key files are PEM: the private key as **unencrypted** PKCS#8
-(``-----BEGIN PRIVATE KEY-----``) written owner-read/write only (mode 0600), and
-the public key as SubjectPublicKeyInfo (``-----BEGIN PUBLIC KEY-----``). The
-private key is protected by filesystem permissions and must stay out of version
-control (see ``deploy/keys`` and ``.gitignore``); only the public key is
-committed / distributed.
+(``-----BEGIN PRIVATE KEY-----``), and the public key as SubjectPublicKeyInfo
+(``-----BEGIN PUBLIC KEY-----``). The private key is protected only by
+filesystem permissions: it is ``chmod 0600`` on POSIX; on Windows ``os.chmod``
+cannot drop group/other bits, so it is left unrestricted and
+:func:`_write_private` logs a ``WARNING`` once — restrict it via an ACL or a
+secrets store (see ``deploy/keys/README.md``). Either way it must stay out of
+version control (``.gitignore``); only the public key is committed / distributed.
 """
 
 from __future__ import annotations
 
+import contextlib
+import logging
 import os
+import stat
 from pathlib import Path
 from typing import NamedTuple
 
@@ -39,10 +44,13 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PublicKey,
 )
 
+_log = logging.getLogger(__name__)
+
 PRIVATE_KEY_NAME = "ulpf_ed25519_private.pem"
 PUBLIC_KEY_NAME = "ulpf_ed25519_public.pem"
 
 _PRIVATE_FILE_MODE = 0o600  # owner read/write only
+_GROUP_OTHER_BITS = 0o077  # any group/other permission bit
 
 
 class KeyPaths(NamedTuple):
@@ -69,9 +77,7 @@ def generate_keypair(path: str | Path, *, overwrite: bool = False) -> KeyPaths:
     private_path = directory / PRIVATE_KEY_NAME
     public_path = directory / PUBLIC_KEY_NAME
     if private_path.exists() and not overwrite:
-        raise FileExistsError(
-            f"{private_path} already exists; pass overwrite=True to replace it"
-        )
+        raise FileExistsError(f"{private_path} already exists; pass overwrite=True to replace it")
 
     key = Ed25519PrivateKey.generate()
     private_pem = key.private_bytes(
@@ -155,7 +161,14 @@ def _public_pem(public_key: Ed25519PublicKey) -> bytes:
 def _write_private(path: Path, data: bytes) -> None:
     """Write the private key, then restrict it to owner read/write where supported."""
     path.write_bytes(data)
-    try:
+    with contextlib.suppress(OSError, NotImplementedError):  # e.g. some Windows filesystems
         os.chmod(path, _PRIVATE_FILE_MODE)
-    except (OSError, NotImplementedError):  # e.g. some Windows filesystems
-        pass
+    if stat.S_IMODE(path.stat().st_mode) & _GROUP_OTHER_BITS:
+        _log.warning(
+            "could not restrict %s to mode %04o — the signing PRIVATE KEY is NOT "
+            "owner-only on this platform (typically Windows). Protect it with "
+            "filesystem ACLs or a secrets store and keep it out of version control; "
+            "see deploy/keys/README.md.",
+            path,
+            _PRIVATE_FILE_MODE,
+        )

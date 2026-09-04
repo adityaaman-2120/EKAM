@@ -10,11 +10,11 @@ from pathlib import Path
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from ulpf.config.settings import IntegritySettings, Settings, StorageSettings
+from ulpf.integrity.hashing import make_raw_event
 from ulpf.integrity.index import IntegrityIndex
 from ulpf.integrity.ledger import IntegrityLedger
 from ulpf.integrity.proofs import ProofBuilder
 from ulpf.integrity.signing import Signer
-from ulpf.integrity.hashing import make_raw_event
 from ulpf.sinks.raw_store import RawStore
 
 
@@ -29,7 +29,9 @@ def _populate(tmp_path: Path, n: int = 4):  # noqa: ANN202
     settings = _settings(tmp_path)
     signer = Signer(Ed25519PrivateKey.generate())
     store = RawStore(settings)
-    events = [make_raw_event(f"raw evt {i}".encode(), source_id="t", transport="udp") for i in range(n)]
+    events = [
+        make_raw_event(f"raw evt {i}".encode(), source_id="t", transport="udp") for i in range(n)
+    ]
     for event in events:
         store.write(event)
     store.flush()
@@ -51,7 +53,9 @@ def _tamper_bronze(settings: Settings, event_uid: str) -> None:
             record["raw_b64"] = base64.b64encode(b"TAMPERED PAYLOAD").decode("ascii")
     with gzip.open(path, "wb") as handle:
         for record in records:
-            handle.write((json.dumps(record, sort_keys=True, separators=(",", ":")) + "\n").encode())
+            handle.write(
+                (json.dumps(record, sort_keys=True, separators=(",", ":")) + "\n").encode()
+            )
 
 
 def test_proof_for_a_clean_event_verifies_end_to_end(tmp_path: Path) -> None:

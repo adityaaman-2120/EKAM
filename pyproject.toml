@@ -43,6 +43,7 @@ dev = [
     "httpx",
     "ruff",
     "mypy",
+    "pre-commit",
 ]
 
 [project.scripts]

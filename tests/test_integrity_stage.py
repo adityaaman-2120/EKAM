@@ -9,11 +9,11 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from ulpf.config.settings import IntegritySettings, Settings, StorageSettings
 from ulpf.core.metrics import snapshot
+from ulpf.integrity.hashing import make_raw_event
 from ulpf.integrity.ledger import IntegrityLedger
 from ulpf.integrity.merkle import merkle_proof, verify_proof
 from ulpf.integrity.signing import Signer
 from ulpf.integrity.stage import IntegrityStage
-from ulpf.integrity.hashing import make_raw_event
 
 
 def _signer() -> Signer:
@@ -30,7 +30,9 @@ def _settings(tmp_path: Path, **integrity: object) -> Settings:
 
 
 def _events(n: int):  # noqa: ANN202
-    return [make_raw_event(f"raw event {i}".encode(), source_id="s", transport="udp") for i in range(n)]
+    return [
+        make_raw_event(f"raw event {i}".encode(), source_id="s", transport="udp") for i in range(n)
+    ]
 
 
 async def _feed(stage: IntegrityStage, events) -> None:  # noqa: ANN001

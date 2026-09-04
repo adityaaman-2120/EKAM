@@ -91,13 +91,22 @@ async def _serve(settings: Settings) -> None:
 
 
 def _print_banner(runtime: Runtime) -> None:
-    """Report the bound listener ports once startup completes."""
+    """Report the bound listener ports and the integrity-ledger state on startup."""
     typer.echo(
         "ULPF listening - "
         f"syslog-udp:{runtime.udp_port} syslog-tcp:{runtime.tcp_port} "
         f"syslog-tls:{runtime.tls_port or 'off'} "
         f"http:{get_settings().ingest.http_port}"
     )
+    if runtime.integrity_active:
+        typer.echo("integrity ledger: ACTIVE - every raw event is sealed and signed")
+    else:
+        typer.echo("")
+        typer.echo("  ****  INTEGRITY LEDGER OFF  ****")
+        typer.echo(f"  reason: {runtime.integrity_off_reason}")
+        typer.echo("  events are being STORED but NOT SIGNED. To fix, run:")
+        typer.echo("    ulpf keys generate --set-config")
+        typer.echo("")
 
 
 @config_app.command("show")
