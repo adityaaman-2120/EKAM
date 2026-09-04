@@ -9,6 +9,8 @@ Commands:
 * ``ulpf sources verify`` — check every source definition against a sample line.
 * ``ulpf keys generate``  — write an Ed25519 signing keypair as PEM.
 * ``ulpf verify …``       — prove ledger integrity and the lossless round-trip.
+* ``ulpf reprocess``      — replay bronze evidence through the current parser.
+* ``ulpf dlq …``          — inspect and recover from the dead-letter queue.
 """
 
 from __future__ import annotations
@@ -24,8 +26,11 @@ import typer
 import yaml
 
 from ulpf import __version__ as _FALLBACK_VERSION
+from ulpf.cli.compact import compact as _compact_command
+from ulpf.cli.dlq import dlq_app
 from ulpf.cli.inspect import inspect as _inspect_command
 from ulpf.cli.keys import keys_app
+from ulpf.cli.reprocess import reprocess as _reprocess_command
 from ulpf.cli.sources import sources_app
 from ulpf.cli.verify import verify_app
 from ulpf.config.settings import Settings, get_settings
@@ -54,9 +59,12 @@ config_app = typer.Typer(help="Inspect configuration.", no_args_is_help=True)
 app.add_typer(config_app, name="config")
 
 app.command("inspect")(_inspect_command)
+app.command("compact")(_compact_command)
+app.command("reprocess")(_reprocess_command)
 app.add_typer(sources_app, name="sources")
 app.add_typer(keys_app, name="keys")
 app.add_typer(verify_app, name="verify")
+app.add_typer(dlq_app, name="dlq")
 
 
 def _resolve_version() -> str:

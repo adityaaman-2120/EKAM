@@ -73,6 +73,49 @@ a list `from`.
 working copy before detection (`ParsedEvent.bom_stripped` records it); the raw
 bytes and `raw_hash` keep the BOM as evidence.
 
+## Reprocessing — correcting history instead of losing it
+
+Parsers get bugs, and OCSF mappings get better. Most log pipelines cannot fix
+their own past: once a bad mapping has run, the only record of what actually
+happened is the flawed derived output. ULPF can, because of three choices made
+earlier in the pipeline:
+
+1. **The raw event is preserved losslessly** (requirement a) — every byte
+   that arrived is written to the bronze store, hashed, and never modified.
+2. **Every derived event stays traceable to its raw source** (requirement d)
+   via a content-addressed `event_uid`/`raw_hash` that a reprocess run carries
+   through unchanged.
+3. **Sources onboard as data, not code** (requirement e) — a YAML fix to a
+   `configs/sources/*.yaml` definition (or a new source version) takes effect
+   immediately, with no redeploy.
+
+Put together: fix the YAML, then replay the untouched bronze evidence through
+the current parse → normalize → enrich → validate → sink chain with
+`ulpf reprocess`. It never re-ingests and never re-hashes — the integrity
+ledger's signed Merkle leaves for that evidence are untouched, because
+reprocessing doesn't mint new evidence, only a corrected interpretation of it.
+
+```bash
+# Replay one day's bronze evidence through the current source definitions
+ulpf reprocess --date 2026-09-04
+
+# Only one source type
+ulpf reprocess --date 2026-09-04 --source-type fortigate_traffic
+
+# Preview counts without writing anything (isolated dead-letter queue too)
+ulpf reprocess --date 2026-09-04 --dry-run
+
+# After fixing a parser bug: how many events changed, and did completeness improve?
+ulpf reprocess --date 2026-09-04 --source-type fortigate_traffic --compare
+```
+
+Each reprocess run writes to the silver tier under a new `mapping_version`
+(`<source_version>+reprocess-<run_id>`) so old and new output are always
+distinguishable — nothing already written is overwritten or deleted.
+`--compare` reads back the previous generation's rows for the same date and
+source type and reports how many events changed vs. stayed identical, and how
+average OCSF completeness moved between generations.
+
 ## Layout
 
 ```

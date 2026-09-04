@@ -123,6 +123,77 @@ def test_dlq_refuses_overwriting_open_modes(tmp_path: Path) -> None:
             q._open(tmp_path / "x.ndjson", mode)
 
 
+def test_mark_resolved_does_not_touch_the_original_entry(tmp_path: Path) -> None:
+    clk = _Clock(_BASE_NS)
+    q = _dlq(tmp_path, clk)
+    rec = q.write(_raw(1), reason="mapping_error", stage="normalize")
+    path = tmp_path / "dlq" / "date=2023-10-11" / "deadletters.ndjson"
+    before = path.read_text(encoding="utf-8")
+
+    clk.advance(60 * 1_000_000_000)
+    q.mark_resolved(rec.event_uid, detail={"original_reason": "mapping_error"})
+
+    assert path.read_text(encoding="utf-8") == before  # original entry byte-for-byte unchanged
+    (still_there,) = list(q.iter_recent(1))
+    assert still_there.event_uid == rec.event_uid  # never deleted
+
+
+def test_resolved_event_uids_reflects_mark_resolved(tmp_path: Path) -> None:
+    q = _dlq(tmp_path)
+    a = q.write(_raw(1), reason="mapping_error", stage="normalize")
+    q.write(_raw(2), reason="mapping_error", stage="normalize")
+
+    assert q.resolved_event_uids() == set()
+    q.mark_resolved(a.event_uid)
+    assert q.resolved_event_uids() == {a.event_uid}
+
+
+def test_iter_entries_filters_by_reason_since_and_unresolved(tmp_path: Path) -> None:
+    clk = _Clock(_BASE_NS)
+    q = _dlq(tmp_path, clk)
+    a = q.write(_raw(1), reason="mapping_error", stage="normalize")
+    clk.advance(3600 * 1_000_000_000)
+    cutoff = clk.t
+    b = q.write(_raw(2), reason="mapping_error", stage="normalize")
+    clk.advance(60 * 1_000_000_000)
+    c = q.write(_raw(3), reason="unsniffable", stage="detect")
+
+    assert [e.event_uid for e in q.iter_entries()] == [a.event_uid, b.event_uid, c.event_uid]
+    assert [e.event_uid for e in q.iter_entries(reason="mapping_error")] == [
+        a.event_uid,
+        b.event_uid,
+    ]
+    assert [e.event_uid for e in q.iter_entries(since_ns=cutoff)] == [b.event_uid, c.event_uid]
+
+    q.mark_resolved(a.event_uid)
+    assert [e.event_uid for e in q.iter_entries(unresolved_only=True)] == [
+        b.event_uid,
+        c.event_uid,
+    ]
+
+
+def test_iter_entries_is_chronological_across_date_partitions(tmp_path: Path) -> None:
+    clk = _Clock(_BASE_NS)
+    q = _dlq(tmp_path, clk)
+    a = q.write(_raw(1), reason="unsniffable", stage="detect")
+    clk.advance(_DAY_NS)
+    b = q.write(_raw(2), reason="unsniffable", stage="detect")
+
+    assert [e.event_uid for e in q.iter_entries()] == [a.event_uid, b.event_uid]
+
+
+def test_stats_reports_resolved_and_unresolved(tmp_path: Path) -> None:
+    q = _dlq(tmp_path)
+    a = q.write(_raw(1), reason="mapping_error", stage="normalize")
+    q.write(_raw(2), reason="mapping_error", stage="normalize")
+    q.mark_resolved(a.event_uid)
+
+    stats = q.stats()
+    assert stats["total"] == 2
+    assert stats["resolved"] == 1
+    assert stats["unresolved"] == 1
+
+
 def test_invalid_utf8_bytes_survive_the_dlq(tmp_path: Path) -> None:
     bad = b"\xff\xfe bad \x00 utf8 \xc3\x28 tail"
     event = make_raw_event(bad, source_id="s", transport="tcp")

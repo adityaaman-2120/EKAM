@@ -85,6 +85,16 @@ INTEGRITY_BATCH_SEAL_SECONDS = Histogram(
     "ulpf_integrity_batch_seal_seconds",
     "Wall-clock time to seal one batch (Merkle root + ledger append + index write).",
 )
+SINK_WRITES = Counter(
+    "ulpf_sink_writes_total",
+    "Per-sink outcome of writing one normalized event.",
+    ["sink", "status"],
+)
+SINK_LATENCY = Histogram(
+    "ulpf_sink_latency_seconds",
+    "Wall-clock time for one sink to write one normalized event.",
+    ["sink"],
+)
 
 _ALL_METRICS = (
     EVENTS_RECEIVED,
@@ -102,6 +112,8 @@ _ALL_METRICS = (
     ENRICH_LATENCY,
     INTEGRITY_BATCHES_SEALED,
     INTEGRITY_BATCH_SEAL_SECONDS,
+    SINK_WRITES,
+    SINK_LATENCY,
 )
 
 

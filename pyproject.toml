@@ -29,6 +29,7 @@ dependencies = [
     "rich",
     "prometheus-client",
     "aiofiles",
+    "httpx",
 ]
 
 [project.optional-dependencies]

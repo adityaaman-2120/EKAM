@@ -120,6 +120,81 @@ class ApiSettings(BaseModel):
     port: int = 8080
 
 
+class ClickHouseSettings(BaseModel):
+    """Optional ClickHouse sink over its HTTP interface (disabled by default).
+
+    When ``enabled`` is False the pipeline runs on the Parquet lake + DuckDB
+    alone. Batched inserts flush at ``batch_rows`` **or** ``batch_seconds``;
+    failures retry with exponential backoff up to ``max_retries``, and once
+    ClickHouse has been unreachable for ``unavailable_backpressure_seconds`` the
+    sink blocks writers (backpressure) instead of dropping — anything still
+    undelivered at shutdown is spooled to ``storage.state_path``.
+    """
+
+    enabled: bool = False
+    url: str = "http://localhost:8123"
+    database: str = "ulpf"
+    table: str = "events"
+    user: str = "default"
+    password: str = ""
+    batch_rows: int = 5000
+    batch_seconds: float = 5.0
+    max_buffer_rows: int = 50_000
+    max_retries: int = 6
+    backoff_base_seconds: float = 0.5
+    backoff_max_seconds: float = 30.0
+    request_timeout_seconds: float = 10.0
+    unavailable_backpressure_seconds: float = 60.0
+
+
+class OpenSearchSettings(BaseModel):
+    """Optional OpenSearch/Elasticsearch sink for the ECS crosswalk (disabled by default).
+
+    This is a **best-effort export**, not a system of record — unlike
+    :class:`ClickHouseSettings` it never blocks the pipeline. If the cluster is
+    unreachable at :meth:`~ulpf.sinks.opensearch_sink.OpenSearchSink.start` the
+    sink logs a warning and disables itself for the run; if a batch still fails
+    after ``max_retries`` it is logged and dropped rather than backing up.
+    """
+
+    enabled: bool = False
+    url: str = "http://localhost:9200"
+    index_prefix: str = "ulpf-ecs"
+    user: str | None = None
+    password: str | None = None
+    api_key: str | None = None
+    verify_tls: bool = True
+    batch_docs: int = 500
+    batch_seconds: float = 5.0
+    max_retries: int = 3
+    backoff_base_seconds: float = 0.5
+    backoff_max_seconds: float = 10.0
+    request_timeout_seconds: float = 10.0
+
+
+class SplunkHecSettings(BaseModel):
+    """Optional Splunk HTTP Event Collector sink for the CIM crosswalk (disabled by default).
+
+    A **best-effort export** like :class:`OpenSearchSettings`: self-disables if
+    unreachable at startup, and drops (with a log) a batch that still fails
+    after ``max_retries`` rather than blocking the pipeline.
+    """
+
+    enabled: bool = False
+    url: str = "https://localhost:8088"
+    token: str = ""
+    source: str = "ulpf"
+    host: str = "ulpf"
+    index: str | None = None
+    verify_tls: bool = True
+    batch_events: int = 100
+    batch_seconds: float = 5.0
+    max_retries: int = 3
+    backoff_base_seconds: float = 0.5
+    backoff_max_seconds: float = 10.0
+    request_timeout_seconds: float = 10.0
+
+
 class Settings(BaseSettings):
     """Root settings object aggregating every configuration section."""
 
@@ -138,6 +213,9 @@ class Settings(BaseSettings):
     enrich: EnrichSettings = Field(default_factory=EnrichSettings)
     pipeline: PipelineSettings = Field(default_factory=PipelineSettings)
     api: ApiSettings = Field(default_factory=ApiSettings)
+    clickhouse: ClickHouseSettings = Field(default_factory=ClickHouseSettings)
+    opensearch: OpenSearchSettings = Field(default_factory=OpenSearchSettings)
+    splunk_hec: SplunkHecSettings = Field(default_factory=SplunkHecSettings)
 
     @classmethod
     def settings_customise_sources(

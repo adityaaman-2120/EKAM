@@ -17,11 +17,22 @@ Records are :class:`~ulpf.core.models.DeadLetter` objects written as NDJSON, one
 per line, append-only, partitioned by write date under
 ``dlq_path/date=YYYY-MM-DD/``. Every write increments
 ``ulpf_dead_letter_total{stage,reason}``.
+
+RESOLUTION
+----------
+``ulpf dlq replay`` (:mod:`ulpf.cli.dlq`) re-runs dead letters through the
+pipeline, typically after a new/fixed source YAML now handles them. A
+successful replay is recorded by *appending* a resolution record to a second,
+also append-only file (``resolved.ndjson``) rather than rewriting or deleting
+the original entry — the failure stays in the audit trail forever; only its
+current status changes. :meth:`DeadLetterQueue.resolved_event_uids` folds that
+file into the set of event UIDs no longer considered outstanding.
 """
 
 from __future__ import annotations
 
 import datetime as dt
+import json
 import time
 from collections import Counter
 from collections.abc import Callable, Iterator
@@ -34,6 +45,7 @@ from ulpf.core.models import DeadLetter, RawEvent
 
 _PARTITION_GLOB = "date=*"
 _PARTITION_FILE = "deadletters.ndjson"
+_RESOLVED_FILE = "resolved.ndjson"
 _ALLOWED_MODES = ("a",)
 
 
@@ -41,6 +53,8 @@ class DlqStats(TypedDict):
     """Aggregate dead-letter counts, shaped for the API."""
 
     total: int
+    resolved: int
+    unresolved: int
     by_reason: dict[str, int]
     by_stage: dict[str, int]
 
@@ -116,14 +130,71 @@ class DeadLetterQueue:
         """Return the total plus dead-letter counts grouped by reason and by stage."""
         by_reason: Counter[str] = Counter()
         by_stage: Counter[str] = Counter()
+        total = 0
+        resolved = self.resolved_event_uids()
+        resolved_count = 0
         for record in self._iter_all_records():
+            total += 1
             by_reason[record.reason] += 1
             by_stage[record.stage] += 1
+            if record.event_uid in resolved:
+                resolved_count += 1
         return DlqStats(
-            total=sum(by_reason.values()),
+            total=total,
+            resolved=resolved_count,
+            unresolved=total - resolved_count,
             by_reason=dict(by_reason),
             by_stage=dict(by_stage),
         )
+
+    def iter_entries(
+        self,
+        *,
+        reason: str | None = None,
+        since_ns: int | None = None,
+        unresolved_only: bool = False,
+    ) -> Iterator[DeadLetter]:
+        """Yield stored dead letters, oldest first, optionally filtered.
+
+        Args:
+            reason: only entries whose ``reason`` matches exactly.
+            since_ns: only entries with ``ts_ns >= since_ns``.
+            unresolved_only: skip entries already marked resolved (see
+                :meth:`mark_resolved`).
+        """
+        resolved: set[str] = self.resolved_event_uids() if unresolved_only else set()
+        for record in self._iter_all_records():
+            if reason is not None and record.reason != reason:
+                continue
+            if since_ns is not None and record.ts_ns < since_ns:
+                continue
+            if unresolved_only and record.event_uid in resolved:
+                continue
+            yield record
+
+    def mark_resolved(self, event_uid: str, *, detail: dict[str, Any] | None = None) -> None:
+        """Record that ``event_uid`` was successfully replayed.
+
+        Appends to a separate, also append-only file — the original dead-letter
+        entry is never rewritten or deleted, so the failure stays in the audit
+        trail even after it is resolved.
+        """
+        path = self._dlq / _RESOLVED_FILE
+        path.parent.mkdir(parents=True, exist_ok=True)
+        record = {"event_uid": event_uid, "resolved_ts_ns": self._clock(), "detail": detail or {}}
+        with self._open(path, "a") as handle:
+            handle.write(json.dumps(record, separators=(",", ":")) + "\n")
+
+    def resolved_event_uids(self) -> set[str]:
+        """Every ``event_uid`` that has ever been marked resolved."""
+        path = self._dlq / _RESOLVED_FILE
+        if not path.exists():
+            return set()
+        uids: set[str] = set()
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                uids.add(json.loads(line)["event_uid"])
+        return uids
 
     def _iter_all_records(self) -> Iterator[DeadLetter]:
         """Yield every stored dead letter across all partitions, chronologically."""

@@ -2,13 +2,16 @@
 
 ``Runtime`` is the object ``ulpf run`` drives. It builds a single
 :class:`~ulpf.core.pipeline.Pipeline` (``RawStoreStage`` -> ``IntegrityStage`` ->
-``ParseStage`` -> ``NormalizeStage`` -> ``EnrichStage`` -> ``ValidateStage``),
-points every listener's ``on_event`` at :meth:`Pipeline.submit`, and manages
-orderly startup and shutdown. ``IntegrityStage`` sits right after the raw-store
-write so the signed Merkle ledger covers the untouched evidence. The enricher
-chain (network context, GeoIP, threat intel, ATT&CK tagging) is assembled from
-``settings.enrich`` and its per-enricher status is served on the intake app's
-``GET /health``.
+``ParseStage`` -> ``NormalizeStage`` -> ``EnrichStage`` -> ``ValidateStage`` ->
+``SinkManager``), points every listener's ``on_event`` at
+:meth:`Pipeline.submit`, and manages orderly startup and shutdown.
+``IntegrityStage`` sits right after the raw-store write so the signed Merkle
+ledger covers the untouched evidence. The enricher chain (network context,
+GeoIP, threat intel, ATT&CK tagging) is assembled from ``settings.enrich`` and
+its per-enricher status is served on the intake app's ``GET /health``.
+:class:`~ulpf.sinks.manager.SinkManager` is the final stage: it fans each
+normalized event out to Parquet (required) plus ClickHouse/OpenSearch/Splunk
+(optional, self-disabling) concurrently.
 
 * **start**  — pipeline workers, then the syslog UDP/TCP listeners, the syslog
   TLS listener (only if ``tls.cert_path``/``key_path`` are set), a file tailer
@@ -46,6 +49,7 @@ from ulpf.integrity.stage import IntegrityStage
 from ulpf.normalize.stage import NormalizeStage, ValidateStage
 from ulpf.parse.coordinator import ParseCoordinator
 from ulpf.parse.dsl.loader import SourceRegistry
+from ulpf.sinks.manager import SinkManager
 from ulpf.sinks.raw_store import RawStore
 
 _log = logging.getLogger(__name__)
@@ -113,6 +117,7 @@ class Runtime:
         self._enrich = EnrichmentPipeline(settings, self._enrichers)
         signer, self._integrity_off_reason = _load_signing_key(settings)
         self._integrity = IntegrityStage(settings, signer=signer)
+        self._sinks = SinkManager.from_settings(settings)
         self._pipeline = Pipeline(
             settings,
             [
@@ -123,6 +128,8 @@ class Runtime:
                 NormalizeStage(settings, self._sources),
                 EnrichStage(settings, self._enrich),
                 ValidateStage(settings, self._sources),
+                # fan out to every enabled sink; DLQs iff a required sink fails
+                self._sinks,
             ],
         )
         self._udp = SyslogUdpListener()
@@ -174,6 +181,7 @@ class Runtime:
         for enricher in self._enrichers:  # hot-reload IOC files (threat_intel)
             if isinstance(enricher, ThreatIntelEnricher):
                 enricher.start()
+        await self._sinks.start()  # network sinks self-disable here if unreachable
         self._pipeline.start()
         await self._udp.start(_BIND_HOST, ingest.syslog_udp_port, submit)
         await self._tcp.start(_BIND_HOST, ingest.syslog_tcp_port, submit)
