@@ -17,11 +17,14 @@ from typer.testing import CliRunner
 from ulpf.cli import compact as compact_cli
 from ulpf.cli.main import app
 from ulpf.config.settings import Settings, StorageSettings
+from ulpf.core.models import NormalizedEvent
 from ulpf.sinks.compaction import Compactor, run_periodic_compaction
+from ulpf.sinks.parquet_sink import ParquetSink
 
 runner = CliRunner()
 _DATE = "2026-09-01"
 _SRC = "fortigate_traffic"
+_TIME_NS = 1_788_264_000_000_000_000  # 2026-09-01T12:00:00Z -> silver date=2026-09-01
 
 
 def _settings(tmp_path: Path) -> Settings:
@@ -32,7 +35,9 @@ def _part_dir(tmp_path: Path, date: str = _DATE, source: str = _SRC) -> Path:
     return tmp_path / "silver" / f"date={date}" / f"source_type={source}"
 
 
-def _write_part(part_dir: Path, rows: list[dict[str, Any]], schema: pa.Schema | None = None) -> Path:
+def _write_part(
+    part_dir: Path, rows: list[dict[str, Any]], schema: pa.Schema | None = None
+) -> Path:
     part_dir.mkdir(parents=True, exist_ok=True)
     table = pa.Table.from_pylist(rows, schema=schema)
     path = part_dir / f"part-{uuid.uuid4().hex}.parquet"
@@ -41,7 +46,9 @@ def _write_part(part_dir: Path, rows: list[dict[str, Any]], schema: pa.Schema | 
 
 
 def _rows(start: int, count: int) -> list[dict[str, Any]]:
-    return [{"event_uid": f"e{i}", "n": i, "src_ip": "192.0.2.1"} for i in range(start, start + count)]
+    return [
+        {"event_uid": f"e{i}", "n": i, "src_ip": "192.0.2.1"} for i in range(start, start + count)
+    ]
 
 
 def _part_files(part_dir: Path) -> list[Path]:
@@ -51,6 +58,70 @@ def _part_files(part_dir: Path) -> list[Path]:
 def _read_all(part_dir: Path) -> pa.Table:
     files = [str(p) for p in _part_files(part_dir)]
     return ds.dataset(files, partitioning=None).to_table()
+
+
+def _normalized_event(uid: str) -> NormalizedEvent:
+    """A minimal but real event, routed by :class:`ParquetSink` to date=2026-09-01."""
+    ocsf = {
+        "class_uid": 4001,
+        "category_uid": 4,
+        "activity_id": 6,
+        "type_uid": 400106,
+        "severity_id": 1,
+        "time": _TIME_NS,
+        "src_endpoint": {"ip": "192.0.2.10", "port": 51000},
+        "dst_endpoint": {"ip": "198.51.100.5", "port": 443},
+    }
+    return NormalizedEvent(
+        event_uid=uid,
+        raw_hash="a" * 64,
+        ingest_time_ns=_TIME_NS,
+        ocsf=ocsf,
+        source_type=_SRC,
+        mapping_version="1.0.0",
+        enrichment={},
+    )
+
+
+# --------------------------------------------------------------------------
+# end-to-end: real ParquetSink writes, real Compactor merges them
+#
+# Every other test in this file hand-builds its part-*.parquet files with
+# pyarrow directly -- useful for exercising schema drift and edge cases in
+# isolation, but it never proves the write path and the compaction path
+# actually agree on what a partition looks like. This is the one integration
+# test that pushes real NormalizedEvent objects through the real ParquetSink
+# (with its flush threshold deliberately lowered, so a normal write burst
+# reproduces the actual small-file problem) and then through the real
+# Compactor, and checks nothing was lost across the round trip.
+
+
+def test_write_then_compact_preserves_every_row_and_event_uid(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    # Production defaults are max_rows=10_000 / flush_interval_seconds=60 --
+    # a single test run would never fill either, so it would always see the
+    # "1 file, 0 partitions compacted" no-op ulpf compact --all just reported.
+    # Lowering max_rows reproduces many small part files from ordinary writes.
+    sink = ParquetSink(settings, max_rows=5)
+    all_uids = {f"evt-{i}" for i in range(97)}  # not a multiple of 5: exercises a partial flush
+    for uid in sorted(all_uids):
+        sink.write(_normalized_event(uid))
+    sink.close()
+
+    part_dir = _part_dir(tmp_path, _DATE, _SRC)
+    files_before = _part_files(part_dir)
+    assert len(files_before) == 20  # ceil(97 / 5) -- the small-file problem, reproduced for real
+
+    result = Compactor(settings).compact(_DATE, _SRC)
+
+    assert result.compacted is True
+    files_after = _part_files(part_dir)
+    assert len(files_after) < len(files_before)
+    assert result.files_before == 20 and result.rows == 97
+
+    table = _read_all(part_dir)
+    assert table.num_rows == 97  # row count identical
+    assert set(table.column("event_uid").to_pylist()) == all_uids  # uid set unchanged
 
 
 # --------------------------------------------------------------------------
@@ -83,6 +154,19 @@ def test_a_single_file_partition_is_left_untouched(tmp_path: Path) -> None:
     assert result.compacted is False
     assert result.files_before == 1 and result.files_after == 1 and result.rows == 10
     assert _part_files(part_dir) == [only]  # same file, not rewritten
+
+
+def test_min_files_one_forces_a_rewrite_of_a_single_file_partition(tmp_path: Path) -> None:
+    part_dir = _part_dir(tmp_path)
+    only = _write_part(part_dir, _rows(0, 10))
+
+    result = Compactor(_settings(tmp_path), min_files=1).compact(_DATE, _SRC)
+
+    assert result.compacted is True
+    assert result.files_before == 1 and result.files_after == 1 and result.rows == 10
+    rewritten = _part_files(part_dir)
+    assert rewritten != [only]  # a new file, even though there was nothing to merge
+    assert pq.ParquetFile(rewritten[0]).read().num_rows == 10
 
 
 def test_missing_partition_is_a_clean_no_op(tmp_path: Path) -> None:
@@ -137,11 +221,13 @@ def test_schema_drift_across_files_is_unified(tmp_path: Path) -> None:
 def test_a_type_conflict_is_coerced_to_json_string_not_fatal(tmp_path: Path) -> None:
     part_dir = _part_dir(tmp_path)
     _write_part(
-        part_dir, [{"k": 1, "x": 10}],
+        part_dir,
+        [{"k": 1, "x": 10}],
         schema=pa.schema([("k", pa.int64()), ("x", pa.int64())]),
     )
     _write_part(
-        part_dir, [{"k": 2, "x": "hello"}],
+        part_dir,
+        [{"k": 2, "x": "hello"}],
         schema=pa.schema([("k", pa.int64()), ("x", pa.string())]),
     )
 
@@ -249,6 +335,24 @@ def test_cli_compact_by_date(populated: Settings) -> None:
 
     empty = runner.invoke(app, ["compact", "--date", "1999-01-01", "--json"])
     assert empty.exit_code == 0 and json.loads(empty.stdout) == []
+
+
+def test_cli_min_files_forces_single_file_partitions_to_compact(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = _settings(tmp_path)
+    for source in ("fortigate_traffic", "suricata_eve_alert"):
+        _write_part(_part_dir(tmp_path, _DATE, source), _rows(0, 3))
+    monkeypatch.setattr(compact_cli, "_load_settings", lambda: settings)
+
+    default = runner.invoke(app, ["compact", "--all", "--json"])
+    assert json.loads(default.stdout) and all(
+        not r["compacted"] for r in json.loads(default.stdout)
+    )
+
+    forced = runner.invoke(app, ["compact", "--all", "--min-files", "1", "--json"])
+    rows = json.loads(forced.stdout)
+    assert len(rows) == 2 and all(r["compacted"] for r in rows)
 
 
 # --------------------------------------------------------------------------

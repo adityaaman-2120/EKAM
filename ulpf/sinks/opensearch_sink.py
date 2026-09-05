@@ -163,7 +163,8 @@ class OpenSearchSink:
         if not self._enabled:
             _log.warning(
                 "OpenSearch at %s is unreachable; the sink is DISABLED for this run "
-                "(the pipeline continues without it)", self._cfg.url,
+                "(the pipeline continues without it)",
+                self._cfg.url,
             )
         else:
             await self._ensure_index_template()
@@ -223,8 +224,12 @@ class OpenSearchSink:
             await self._bulk_request(body)
 
         def _on_fail(attempt: int, exc: Exception, fatal: bool) -> None:
-            _log.warning("OpenSearch bulk attempt %d failed (%s): %s", attempt + 1,
-                        "fatal" if fatal else "retrying", exc)
+            _log.warning(
+                "OpenSearch bulk attempt %d failed (%s): %s",
+                attempt + 1,
+                "fatal" if fatal else "retrying",
+                exc,
+            )
 
         delivered = await deliver_with_retry(
             _send,
@@ -283,7 +288,9 @@ class OpenSearchSink:
             if response.status_code >= 300:
                 _log.warning(
                     "could not create OpenSearch index template %s (HTTP %d); "
-                    "new indices will use dynamic mapping", name, response.status_code,
+                    "new indices will use dynamic mapping",
+                    name,
+                    response.status_code,
                 )
         except httpx.HTTPError as exc:
             _log.warning("could not create OpenSearch index template %s: %s", name, exc)
@@ -294,7 +301,9 @@ class OpenSearchSink:
         if self._cfg.user:
             import base64
 
-            token = base64.b64encode(f"{self._cfg.user}:{self._cfg.password or ''}".encode()).decode()
+            token = base64.b64encode(
+                f"{self._cfg.user}:{self._cfg.password or ''}".encode()
+            ).decode()
             return {"Authorization": f"Basic {token}"}
         return {}
 
@@ -336,5 +345,9 @@ def _log_item_errors(payload: dict[str, Any]) -> None:
         if "index" in item and item["index"].get("status", 200) >= 300
     ]
     if failed:
-        _log.warning("OpenSearch bulk: %d/%d documents rejected, e.g. %s",
-                    len(failed), len(payload.get("items", [])), failed[0].get("error"))
+        _log.warning(
+            "OpenSearch bulk: %d/%d documents rejected, e.g. %s",
+            len(failed),
+            len(payload.get("items", [])),
+            failed[0].get("error"),
+        )

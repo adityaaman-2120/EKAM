@@ -86,7 +86,9 @@ def test_files_land_in_date_and_source_type_partitions(tmp_path: Path) -> None:
     assert (silver / "date=2026-09-01" / "source_type=fortigate_traffic").is_dir()
     assert (silver / "date=2026-09-02" / "source_type=fortigate_traffic").is_dir()
     assert (silver / "date=2026-09-01" / "source_type=suricata_eve_alert").is_dir()
-    assert len(written) == 3 and all(p.name.startswith("part-") and p.suffix == ".parquet" for p in written)
+    assert len(written) == 3 and all(
+        p.name.startswith("part-") and p.suffix == ".parquet" for p in written
+    )
 
     by_dir = {p.parent.name + "/" + p.parent.parent.name: _read(p) for p in written}
     assert by_dir["source_type=fortigate_traffic/date=2026-09-01"].num_rows == 2
@@ -220,7 +222,9 @@ def test_new_column_in_a_later_file_does_not_fail_and_reads_back_unified(tmp_pat
     unified = ds.dataset(
         [str(p) for p in files], schema=unified_schema, partitioning=None
     ).to_table()
-    assert {"query.hostname", "brand_new.nested", "firewall_rule.name"}.issubset(unified.column_names)
+    assert {"query.hostname", "brand_new.nested", "firewall_rule.name"}.issubset(
+        unified.column_names
+    )
     rows = {r["event_uid"]: r for r in unified.to_pylist()}
     assert rows["net-1"]["query.hostname"] is None  # older row has null for the new column
     assert rows["dns-1"]["query.hostname"] == "evil.example"

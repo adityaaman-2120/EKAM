@@ -4,6 +4,11 @@
 
 ingest:
   syslog_udp_port: 514
+  # Requested SO_RCVBUF for the UDP listener; the OS may grant less (the
+  # actual size is logged at startup). Raises the burst UDP can absorb before
+  # dropping datagrams -- it does not make UDP lossless. Benchmark and
+  # verification runs must use TCP (see CLAUDE.md).
+  syslog_udp_recv_buffer_bytes: 4194304
   syslog_tcp_port: 514
   syslog_tls_port: 6514
   http_port: 8081

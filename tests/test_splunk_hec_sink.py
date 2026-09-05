@@ -64,7 +64,9 @@ class FakeHec:
         return [b for u, b, _h in self.requests if u.endswith("collector/event")]
 
     def events(self, index: int = 0) -> list[dict[str, Any]]:
-        return [json.loads(line) for line in self.event_requests[index].splitlines() if line.strip()]
+        return [
+            json.loads(line) for line in self.event_requests[index].splitlines() if line.strip()
+        ]
 
 
 def _settings(tmp_path: Path, **hec: Any) -> Settings:
@@ -144,7 +146,9 @@ async def test_disabled_by_config_makes_no_http_calls(tmp_path: Path) -> None:
 async def test_health_check_and_posts_use_token_auth(tmp_path: Path) -> None:
     fake = FakeHec()
     sink = SplunkHecSink(
-        _settings(tmp_path, batch_events=1, token="my-token"), client=fake.client(), sleep=RecordingSleep()
+        _settings(tmp_path, batch_events=1, token="my-token"),
+        client=fake.client(),
+        sleep=RecordingSleep(),
     )
     await sink.start(timer=False)
     await sink.write(_ne("a"))
@@ -160,7 +164,8 @@ async def test_posts_the_cim_crosswalk_with_sourcetype_per_source(tmp_path: Path
     fake = FakeHec()
     sink = SplunkHecSink(
         _settings(tmp_path, batch_events=2, source="ulpf-test", host="collector-1"),
-        client=fake.client(), sleep=RecordingSleep(),
+        client=fake.client(),
+        sleep=RecordingSleep(),
     )
     await sink.start(timer=False)
 
@@ -183,7 +188,9 @@ async def test_posts_the_cim_crosswalk_with_sourcetype_per_source(tmp_path: Path
 
 async def test_time_field_is_epoch_seconds(tmp_path: Path) -> None:
     fake = FakeHec()
-    sink = SplunkHecSink(_settings(tmp_path, batch_events=1), client=fake.client(), sleep=RecordingSleep())
+    sink = SplunkHecSink(
+        _settings(tmp_path, batch_events=1), client=fake.client(), sleep=RecordingSleep()
+    )
     await sink.start(timer=False)
     await sink.write(_ne("a"))
     event = fake.events()[0]
@@ -193,7 +200,9 @@ async def test_time_field_is_epoch_seconds(tmp_path: Path) -> None:
 
 async def test_index_field_only_present_when_configured(tmp_path: Path) -> None:
     fake = FakeHec()
-    sink = SplunkHecSink(_settings(tmp_path, batch_events=1), client=fake.client(), sleep=RecordingSleep())
+    sink = SplunkHecSink(
+        _settings(tmp_path, batch_events=1), client=fake.client(), sleep=RecordingSleep()
+    )
     await sink.start(timer=False)
     await sink.write(_ne("a"))
     assert "index" not in fake.events()[0]
@@ -201,7 +210,9 @@ async def test_index_field_only_present_when_configured(tmp_path: Path) -> None:
 
     fake2 = FakeHec()
     sink2 = SplunkHecSink(
-        _settings(tmp_path, batch_events=1, index="ulpf_main"), client=fake2.client(), sleep=RecordingSleep()
+        _settings(tmp_path, batch_events=1, index="ulpf_main"),
+        client=fake2.client(),
+        sleep=RecordingSleep(),
     )
     await sink2.start(timer=False)
     await sink2.write(_ne("b"))
@@ -211,7 +222,9 @@ async def test_index_field_only_present_when_configured(tmp_path: Path) -> None:
 
 async def test_timer_flushes_a_partial_batch(tmp_path: Path) -> None:
     fake = FakeHec()
-    sink = SplunkHecSink(_settings(tmp_path, batch_events=1000, batch_seconds=0.01), client=fake.client())
+    sink = SplunkHecSink(
+        _settings(tmp_path, batch_events=1000, batch_seconds=0.01), client=fake.client()
+    )
     await sink.start()
     try:
         await sink.write(_ne("a"))
@@ -233,7 +246,9 @@ async def test_retries_a_failed_batch_then_succeeds(tmp_path: Path) -> None:
     fake.event_responses = [503]
     sleep = RecordingSleep()
     sink = SplunkHecSink(
-        _settings(tmp_path, batch_events=1, backoff_base_seconds=0.2), client=fake.client(), sleep=sleep
+        _settings(tmp_path, batch_events=1, backoff_base_seconds=0.2),
+        client=fake.client(),
+        sleep=sleep,
     )
     await sink.start(timer=False)
     await sink.write(_ne("a"))
@@ -246,7 +261,9 @@ async def test_persistent_failure_is_dropped_and_never_blocks(tmp_path: Path) ->
     fake = FakeHec()
     fake.event_default = 503
     sink = SplunkHecSink(
-        _settings(tmp_path, batch_events=2, max_retries=1), client=fake.client(), sleep=RecordingSleep()
+        _settings(tmp_path, batch_events=2, max_retries=1),
+        client=fake.client(),
+        sleep=RecordingSleep(),
     )
     await sink.start(timer=False)
     await sink.write(_ne("a"))
@@ -260,7 +277,9 @@ async def test_persistent_failure_is_dropped_and_never_blocks(tmp_path: Path) ->
 async def test_fatal_4xx_is_dropped_without_retrying(tmp_path: Path) -> None:
     fake = FakeHec()
     fake.event_default = 403  # e.g. invalid token
-    sink = SplunkHecSink(_settings(tmp_path, batch_events=1), client=fake.client(), sleep=RecordingSleep())
+    sink = SplunkHecSink(
+        _settings(tmp_path, batch_events=1), client=fake.client(), sleep=RecordingSleep()
+    )
     await sink.start(timer=False)
     await sink.write(_ne("a"))
     assert len(fake.event_requests) == 1  # a single attempt, no retry
@@ -270,7 +289,9 @@ async def test_fatal_4xx_is_dropped_without_retrying(tmp_path: Path) -> None:
 
 async def test_close_flushes_pending_events_and_is_idempotent(tmp_path: Path) -> None:
     fake = FakeHec()
-    sink = SplunkHecSink(_settings(tmp_path, batch_events=1000), client=fake.client(), sleep=RecordingSleep())
+    sink = SplunkHecSink(
+        _settings(tmp_path, batch_events=1000), client=fake.client(), sleep=RecordingSleep()
+    )
     await sink.start(timer=False)
     await sink.write(_ne("a"))
     assert fake.event_requests == []

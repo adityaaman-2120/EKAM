@@ -69,3 +69,47 @@ async def test_sockname_raises_before_start() -> None:
     listener = SyslogUdpListener()
     with pytest.raises(RuntimeError):
         _ = listener.sockname
+
+
+# --------------------------------------------------------------------------
+# SO_RCVBUF
+
+
+async def test_actual_recv_buffer_bytes_is_none_before_start() -> None:
+    listener = SyslogUdpListener()
+    assert listener.actual_recv_buffer_bytes is None
+
+
+async def test_recv_buffer_is_requested_and_the_granted_size_is_reported() -> None:
+    requested = 4 * 1024 * 1024
+    listener = SyslogUdpListener(recv_buffer_bytes=requested)
+    await listener.start("127.0.0.1", 0, lambda event: asyncio.sleep(0))
+    try:
+        # the OS is free to grant more or less than requested (Linux commonly
+        # doubles it for bookkeeping) -- the contract is "at least what a
+        # default socket would have gotten", not an exact byte count.
+        assert listener.actual_recv_buffer_bytes is not None
+        assert listener.actual_recv_buffer_bytes > 0
+    finally:
+        await listener.stop()
+
+
+async def test_default_recv_buffer_is_at_least_four_mebibytes() -> None:
+    listener = SyslogUdpListener()
+    await listener.start("127.0.0.1", 0, lambda event: asyncio.sleep(0))
+    try:
+        assert listener.actual_recv_buffer_bytes is not None
+        assert listener.actual_recv_buffer_bytes >= 4 * 1024 * 1024
+    finally:
+        await listener.stop()
+
+
+async def test_recv_buffer_bytes_zero_leaves_the_os_default_alone() -> None:
+    listener = SyslogUdpListener(recv_buffer_bytes=0)
+    await listener.start("127.0.0.1", 0, lambda event: asyncio.sleep(0))
+    try:
+        # still reads back SOME granted size -- just never asked to change it
+        assert listener.actual_recv_buffer_bytes is not None
+        assert listener.actual_recv_buffer_bytes > 0
+    finally:
+        await listener.stop()

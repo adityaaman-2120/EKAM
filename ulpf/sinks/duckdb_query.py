@@ -83,10 +83,32 @@ _INTERVAL_RE = re.compile(r"^\s*(\d+)\s*(second|minute|hour|day|week)s?\s*$", re
 _ALLOWED_START = ("SELECT", "WITH")
 _FORBIDDEN_KEYWORDS = frozenset(
     {
-        "INSERT", "UPDATE", "DELETE", "MERGE", "UPSERT", "DROP", "CREATE", "ALTER",
-        "TRUNCATE", "REPLACE", "ATTACH", "DETACH", "COPY", "EXPORT", "IMPORT",
-        "INSTALL", "LOAD", "PRAGMA", "SET", "RESET", "CALL", "GRANT", "REVOKE",
-        "VACUUM", "CHECKPOINT", "USE",
+        "INSERT",
+        "UPDATE",
+        "DELETE",
+        "MERGE",
+        "UPSERT",
+        "DROP",
+        "CREATE",
+        "ALTER",
+        "TRUNCATE",
+        "REPLACE",
+        "ATTACH",
+        "DETACH",
+        "COPY",
+        "EXPORT",
+        "IMPORT",
+        "INSTALL",
+        "LOAD",
+        "PRAGMA",
+        "SET",
+        "RESET",
+        "CALL",
+        "GRANT",
+        "REVOKE",
+        "VACUUM",
+        "CHECKPOINT",
+        "USE",
     }
 )
 
@@ -192,7 +214,7 @@ class LakeQuery:
     def stats_by_source(self) -> list[dict[str, Any]]:
         """Per-source counts, time span, byte volume and distinct source IPs."""
         return self.query(
-            'SELECT source_type,'
+            "SELECT source_type,"
             " COUNT(*) AS events,"
             ' MIN("time") AS first_time_ns,'
             ' MAX("time") AS last_time_ns,'
@@ -213,7 +235,7 @@ class LakeQuery:
         window_fn, window_n = _interval_parts(window)
         sql = (
             "WITH s AS ("
-            f'  SELECT time_bucket({bucket_fn}(?),'
+            f"  SELECT time_bucket({bucket_fn}(?),"
             '         make_timestamp(CAST("time" / 1000 AS BIGINT))) AS bucket, source_type'
             '  FROM events WHERE "time" IS NOT NULL'
             "), mx AS (SELECT max(bucket) AS newest FROM s) "

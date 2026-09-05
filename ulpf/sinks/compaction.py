@@ -29,6 +29,18 @@ Each output file is written to a ``.<name>.tmp`` sibling and then atomically
 output has been renamed. If the process is killed between the renames and the
 deletes, the next compaction pass simply re-merges the survivors — no data is
 lost. Run compaction from a single scheduler so passes never overlap.
+
+WHEN A PARTITION HAS ONLY ONE FILE ALREADY
+-------------------------------------------
+By default (``min_files=2``, ``ulpf compact --min-files``) a partition with
+fewer than 2 ``part-*.parquet`` files is left untouched — merging one file into
+one file is pure churn on a real, healthy partition. On a small or synthetic
+dataset (a demo, a short manual test run) every partition may only ever
+accumulate exactly one file before the run ends, so ``compact_all`` reports
+"0 partitions compacted" even though the merge/split/schema-unification logic
+was never exercised. Pass ``min_files=1`` (CLI: ``--min-files 1``) to force a
+rewrite of single-file partitions too, purely to demonstrate the path end to
+end; it is never needed for real operational use.
 """
 
 from __future__ import annotations
@@ -72,13 +84,36 @@ class CompactionResult:
         return asdict(self)
 
 
+DEFAULT_MIN_FILES = 2
+
+
 class Compactor:
     """Merges the many small Parquet files in a silver partition into a few large ones."""
 
-    def __init__(self, settings: Settings, *, target_file_bytes: int = _TARGET_FILE_BYTES) -> None:
-        """Configure against ``storage.silver_path`` and a target output file size."""
+    def __init__(
+        self,
+        settings: Settings,
+        *,
+        target_file_bytes: int = _TARGET_FILE_BYTES,
+        min_files: int = DEFAULT_MIN_FILES,
+    ) -> None:
+        """Configure against ``storage.silver_path`` and a target output file size.
+
+        Args:
+            settings: Supplies ``storage.silver_path``.
+            target_file_bytes: Roughly how large each output file should be.
+            min_files: A partition with fewer than this many ``part-*.parquet``
+                files is left untouched (``compacted=False``) — merging one
+                file into one file is pure churn. The default, 2, is the
+                housekeeping threshold: any partition with 2+ files benefits.
+                Pass ``1`` to force a rewrite of single-file partitions too
+                (e.g. to demonstrate the merge path end-to-end against a small
+                or synthetic dataset where every partition only ever
+                accumulates one file).
+        """
         self._silver = Path(settings.storage.silver_path)
         self._target = max(int(target_file_bytes), _MIN_TARGET_BYTES)
+        self._min_files = max(int(min_files), 1)
 
     def partitions(self, *, date: str | None = None) -> Iterator[tuple[str, str]]:
         """Yield every ``(date, source_type)`` partition under the silver root."""
@@ -114,11 +149,17 @@ class Compactor:
         parts = sorted(part_dir.glob("part-*.parquet"))
         bytes_before = sum(p.stat().st_size for p in parts)
 
-        if len(parts) <= 1:  # nothing to merge
+        if len(parts) < self._min_files:  # below the configured merge threshold
             rows = _row_count(parts[0]) if parts else 0
             return CompactionResult(
-                date, source_type, len(parts), len(parts), rows,
-                bytes_before, bytes_before, compacted=False,
+                date,
+                source_type,
+                len(parts),
+                len(parts),
+                rows,
+                bytes_before,
+                bytes_before,
+                compacted=False,
             )
 
         merged = merge_tables([pq.ParquetFile(p).read() for p in parts])
@@ -132,13 +173,22 @@ class Compactor:
         _log.info(
             "compacted partition",
             extra={
-                "date": date, "source_type": source_type,
-                "files_before": len(parts), "files_after": len(new_files), "rows": merged.num_rows,
+                "date": date,
+                "source_type": source_type,
+                "files_before": len(parts),
+                "files_after": len(new_files),
+                "rows": merged.num_rows,
             },
         )
         return CompactionResult(
-            date, source_type, len(parts), len(new_files), merged.num_rows,
-            bytes_before, bytes_after, compacted=True,
+            date,
+            source_type,
+            len(parts),
+            len(new_files),
+            merged.num_rows,
+            bytes_before,
+            bytes_after,
+            compacted=True,
         )
 
 

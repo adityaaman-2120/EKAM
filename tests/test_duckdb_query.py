@@ -69,7 +69,9 @@ def _write_dlq(dlq: Path, date: str, records: list[dict[str, Any]]) -> None:
 def lake(tmp_path: Path):  # noqa: ANN201
     silver = tmp_path / "silver"
     _write_events(
-        silver, "2026-09-01", "fortigate_traffic",
+        silver,
+        "2026-09-01",
+        "fortigate_traffic",
         [
             _ev("f1", "fortigate_traffic", _BASE_NS + 10, src_ip="10.0.0.1", bytes_out=500),
             _ev("f2", "fortigate_traffic", _BASE_NS + 20, src_ip="10.0.0.2"),
@@ -77,16 +79,33 @@ def lake(tmp_path: Path):  # noqa: ANN201
         ],
     )
     _write_events(
-        silver, "2026-09-02", "zeek_conn",
+        silver,
+        "2026-09-02",
+        "zeek_conn",
         [_ev("z1", "zeek_conn", _BASE_NS + 25, src_ip="203.0.113.9", bytes_in=9, bytes_out=1)],
     )
     _write_dlq(
-        tmp_path / "dlq", "2026-09-01",
+        tmp_path / "dlq",
+        "2026-09-01",
         [
-            {"event_uid": "d1", "raw": "YWJj", "raw_hash": "x1", "reason": "parse_error",
-             "stage": "parse", "detail": {"format": "kv"}, "ts_ns": _BASE_NS},
-            {"event_uid": "d2", "raw": "ZGVm", "raw_hash": "x2", "reason": "ocsf_validation_failed",
-             "stage": "validate", "detail": {"errors": ["bad"]}, "ts_ns": _BASE_NS + 1},
+            {
+                "event_uid": "d1",
+                "raw": "YWJj",
+                "raw_hash": "x1",
+                "reason": "parse_error",
+                "stage": "parse",
+                "detail": {"format": "kv"},
+                "ts_ns": _BASE_NS,
+            },
+            {
+                "event_uid": "d2",
+                "raw": "ZGVm",
+                "raw_hash": "x2",
+                "reason": "ocsf_validation_failed",
+                "stage": "validate",
+                "detail": {"errors": ["bad"]},
+                "ts_ns": _BASE_NS + 1,
+            },
         ],
     )
     with LakeQuery(_settings(tmp_path)) as query:
@@ -217,14 +236,19 @@ def test_timeseries_buckets_events_over_a_window(tmp_path: Path) -> None:
     minute = 60 * 1_000_000_000
     times = [0, minute, 2 * minute, 2 * minute, 10 * minute, 11 * minute]
     _write_events(
-        silver, "2026-09-01", "fortigate_traffic",
+        silver,
+        "2026-09-01",
+        "fortigate_traffic",
         [_ev(f"e{i}", "fortigate_traffic", _BASE_NS + t) for i, t in enumerate(times)],
     )
 
     with LakeQuery(_settings(tmp_path)) as query:
         per_minute = query.timeseries("1 minute", "1 hour")
         assert sum(r["events"] for r in per_minute) == 6
-        assert all(isinstance(r["bucket"], str) and r["bucket"].startswith("2026-09-01T") for r in per_minute)
+        assert all(
+            isinstance(r["bucket"], str) and r["bucket"].startswith("2026-09-01T")
+            for r in per_minute
+        )
 
         # a 5-minute window from the newest bucket (minute 11) only covers minutes 10 & 11
         recent_only = query.timeseries("1 minute", "5 minutes")

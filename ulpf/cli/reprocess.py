@@ -46,6 +46,21 @@ rows for the same scope before writing anything new, and reports how many
 events' core fields changed and how normalization completeness moved, per the
 previous ``mapping_version`` (a prior reprocess run's output if there is one,
 else the original ingest).
+
+``--date`` IS AN INGEST DATE, NOT AN EVENT DATE
+-------------------------------------------------
+Bronze (:mod:`ulpf.sinks.raw_store`) partitions by **ingest** date; silver
+(:mod:`ulpf.sinks.parquet_sink`) partitions by **event** date (``ocsf["time"]``)
+— see that module's docstring for why. ``--date`` selects the bronze partition
+to *read*, so ``ulpf reprocess --date 2026-09-05`` replays every raw event this
+system received on 2026-09-05, regardless of when each one says it happened —
+one arriving late from a delayed forwarder might carry an event time of
+2026-09-03. The corrected output for that event is written to *its own* event
+date, ``date=2026-09-03``, in silver — not to ``date=2026-09-05``. A single
+reprocess run can therefore write to several different silver date partitions.
+That is correct, not a bug, and this command always prints both explicitly —
+"reading bronze date=X, writing silver dates=[...]" — so the operator never has
+to infer it.
 """
 
 from __future__ import annotations
@@ -56,7 +71,7 @@ import json
 import logging
 import tempfile
 import uuid
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -77,7 +92,7 @@ from ulpf.parse.coordinator import ParseCoordinator
 from ulpf.parse.dsl.loader import SourceRegistry
 from ulpf.sinks.compaction import merge_tables
 from ulpf.sinks.manager import SinkManager
-from ulpf.sinks.parquet_sink import CORE_COLUMNS, core_row
+from ulpf.sinks.parquet_sink import CORE_COLUMNS, core_row, epoch_ns_to_date
 from ulpf.sinks.raw_store import RawStore
 
 _log = logging.getLogger(__name__)
@@ -116,11 +131,19 @@ class CompareStats:
 
     @property
     def old_avg(self) -> float | None:
-        return self.completeness_old_sum / self.completeness_compared if self.completeness_compared else None
+        return (
+            self.completeness_old_sum / self.completeness_compared
+            if self.completeness_compared
+            else None
+        )
 
     @property
     def new_avg(self) -> float | None:
-        return self.completeness_new_sum / self.completeness_compared if self.completeness_compared else None
+        return (
+            self.completeness_new_sum / self.completeness_compared
+            if self.completeness_compared
+            else None
+        )
 
     @property
     def delta_avg(self) -> float | None:
@@ -131,7 +154,14 @@ class CompareStats:
 
 @dataclass
 class ReprocessReport:
-    """The outcome of one ``ulpf reprocess`` run."""
+    """The outcome of one ``ulpf reprocess`` run.
+
+    ``date`` is the **bronze ingest date** that was read; ``silver_dates`` is
+    every distinct **event date** partition this run wrote to (see the module
+    docstring's "``--date`` IS AN INGEST DATE" section for why these can
+    differ). ``silver_dates`` is empty for a source that matched no source
+    definition scope, produced only dead letters, or a ``--dry-run``.
+    """
 
     date: str
     source_type: str | None
@@ -142,10 +172,12 @@ class ReprocessReport:
     normalized: int = 0
     dead_lettered: int = 0
     written: int = 0
+    silver_dates: set[str] = field(default_factory=set)
     compare: CompareStats | None = None
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
+        data["silver_dates"] = sorted(self.silver_dates)
         data["compare"] = self.compare.to_dict() if self.compare is not None else None
         return data
 
@@ -202,6 +234,11 @@ async def run_reprocess(
                 continue
             assert normalized is not None
             report.normalized += 1
+            # the exact partition ParquetSink.write would use, so the report is
+            # accurate even under --dry-run (which never actually calls it)
+            report.silver_dates.add(
+                epoch_ns_to_date(normalized.ocsf.get("time") or normalized.ingest_time_ns)
+            )
 
             if compare and report.compare is not None:
                 _update_compare(report.compare, normalized, previous.get(normalized.event_uid))
@@ -378,10 +415,22 @@ def _attr_populated(row: dict[str, Any], attr: str) -> bool:
 def _render(console: Console, report: ReprocessReport) -> None:
     mode = "DRY RUN — nothing written" if report.dry_run else "applied"
     scope = report.source_type or "all sources"
-    console.print(Panel(
-        f"date [cyan]{report.date}[/]  ·  scope [cyan]{scope}[/]  ·  {mode}\n"
-        f"mapping_version tag: [cyan]{report.mapping_version_tag}[/]",
-        title="reprocess", border_style="cyan"))
+    silver_dates = ", ".join(sorted(report.silver_dates)) if report.silver_dates else "(none)"
+    console.print(
+        Panel(
+            f"reading bronze date=[cyan]{report.date}[/]  ·  scope [cyan]{scope}[/]  ·  {mode}\n"
+            f"writing silver dates=[cyan]{silver_dates}[/]"
+            + (
+                "  [yellow](differs from the bronze ingest date above — see "
+                "ulpf.cli.reprocess module docs)[/]"
+                if report.silver_dates - {report.date}
+                else ""
+            )
+            + f"\nmapping_version tag: [cyan]{report.mapping_version_tag}[/]",
+            title="reprocess",
+            border_style="cyan",
+        )
+    )
 
     table = Table(box=None, show_header=False)
     table.add_column(style="bold")
@@ -389,7 +438,9 @@ def _render(console: Console, report: ReprocessReport) -> None:
     table.add_row("raw events read", str(report.raw_events))
     table.add_row("in scope", str(report.in_scope))
     table.add_row("normalized", f"[green]{report.normalized}[/]")
-    table.add_row("dead-lettered", f"[red]{report.dead_lettered}[/]" if report.dead_lettered else "0")
+    table.add_row(
+        "dead-lettered", f"[red]{report.dead_lettered}[/]" if report.dead_lettered else "0"
+    )
     table.add_row("written to sinks", "n/a (dry run)" if report.dry_run else str(report.written))
     console.print(table)
 
@@ -411,20 +462,26 @@ def _render(console: Console, report: ReprocessReport) -> None:
 def reprocess(
     date: str = typer.Option(..., "--date", help="Ingest date to reprocess (YYYY-MM-DD)."),
     source_type: str | None = typer.Option(
-        None, "--source-type", help="Only this source's events (matched against today's definitions)."
+        None,
+        "--source-type",
+        help="Only this source's events (matched against today's definitions).",
     ),
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Compute and report only; write nothing (not even to the DLQ)."
     ),
     compare: bool = typer.Option(
-        False, "--compare", help="Diff the new output against the current silver rows for this scope."
+        False,
+        "--compare",
+        help="Diff the new output against the current silver rows for this scope.",
     ),
     json_out: bool = typer.Option(False, "--json", help="Machine-readable output."),
 ) -> None:
     """Re-run parse, normalize, enrich, validate and sink for one date's bronze evidence."""
     settings = _load_settings()
     report = asyncio.run(
-        run_reprocess(settings, date=date, source_type=source_type, dry_run=dry_run, compare=compare)
+        run_reprocess(
+            settings, date=date, source_type=source_type, dry_run=dry_run, compare=compare
+        )
     )
     if json_out:
         typer.echo(json.dumps(report.to_dict(), indent=2))

@@ -132,7 +132,9 @@ class Runtime:
                 self._sinks,
             ],
         )
-        self._udp = SyslogUdpListener()
+        self._udp = SyslogUdpListener(
+            recv_buffer_bytes=settings.ingest.syslog_udp_recv_buffer_bytes
+        )
         self._tcp = SyslogTcpListener()
         self._tls: SyslogTlsListener | None = None
         self._tailer: FileTailer | None = None

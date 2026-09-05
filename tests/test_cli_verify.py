@@ -256,3 +256,46 @@ def test_verify_roundtrip_separates_evidence_loss_from_normalization_gap(
     assert body["renormalize_stable"] == 6 and body["renormalize_stable_rate"] == 100.0
     # no byte/reparse/renormalize failures — dead-letters are counted, not "failed"
     assert body["failures"] == []
+
+
+# --------------------------------------------------------------------------
+# reparse-stable must use the definition-driven path, not the sniff-only one
+
+_PANOS_TRAFFIC_V10 = (
+    b"<14>1 2026-09-01T12:00:03Z pa-fw1 - - - - "
+    b"1,2026/09/01 12:00:03,001801234567,TRAFFIC,end,2622,2026/09/01 12:00:00,"
+    b"192.0.2.15,203.0.113.9,198.51.100.7,203.0.113.9,allow-web,,,ssl,vsys1,trust,"
+    b"untrust,ethernet1/2,ethernet1/1,forward-all,,104512,1,51234,443,51235,443,"
+    b"0x400053,tcp,allow,5060,1240,3820,12,2026/09/01 11:59:48,12,"
+    b"web-advertisements,0,7000000123,0x0,192.0.2.0-192.0.2.255,United States,0,7,5,"
+    b"tcp-fin"
+)
+
+
+def test_verify_roundtrip_reparse_stable_is_100_percent_for_panos(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """BUG: PAN-OS TRAFFIC sniffs as "csv"; the sniff-only pass has no columns for
+
+    it and used to raise on every single event, reporting a perfectly healthy,
+    deterministic source as parser non-determinism (491/513 = 95.71% in one
+    real run). reparse-stable must reparse with the MATCHED definition's own
+    engine and options (its version-keyed column_map here), not the
+    definition-less sniff pass, so this must be 100%.
+    """
+    settings = _settings(tmp_path)
+    monkeypatch.setattr(verify_mod, "_load_settings", lambda: settings)
+    store = RawStore(settings)
+    for _ in range(10):
+        store.write(make_raw_event(_PANOS_TRAFFIC_V10, source_id="t", transport="udp"))
+    store.flush()
+
+    body = json.loads(runner.invoke(app, ["verify", "roundtrip", "--json"]).stdout)
+
+    assert body["total"] == 10
+    assert body["reparse_stable"] == 10
+    assert body["reparse_stable_rate"] == 100.0
+    assert body["no_source_match_count"] == 0
+    assert body["dead_letter_count"] == 0
+    assert body["renormalize_stable_rate"] == 100.0
+    assert body["failures"] == []

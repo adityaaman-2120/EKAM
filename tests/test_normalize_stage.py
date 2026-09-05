@@ -18,7 +18,7 @@ from ulpf.sinks.dlq import DeadLetterQueue
 _FORTI_LINE = (
     b'<189>date=2026-08-15 time=22:14:15 devname="FGT" action="accept" '
     b"srcip=192.0.2.15 srcport=51234 dstip=203.0.113.9 dstport=443 "
-    b'level="notice" policyid=1'
+    b'level="notice" policyid=1 extra="leftover"'
 )
 _FORTI_FIELDS = {
     "date": "2026-08-15",
@@ -43,7 +43,7 @@ def _full_source(*, on_failure: str = "dead_letter") -> dict[str, Any]:
         "product": "FortiGate",
         "product_version": "7.4",
         "detect": {"contains": "devname="},
-        "parse": {"engine": "kv", "options": {}},
+        "parse": {"envelope": "syslog", "engine": "kv", "options": {}},
         "normalize": {
             "class_uid": 4001,
             "category_uid": 4,
@@ -201,7 +201,11 @@ async def test_mapping_failure_dead_letters_with_all_parsed_fields(tmp_path: Pat
     assert entry.detail["source_type"] == "test_forti"
     assert entry.detail["target"] == "time"
     # every extracted field survives into the dead letter, not just the raw bytes
-    assert entry.detail["parsed_fields"] == _FORTI_FIELDS
+    # (parse_for_definition also merges the stripped syslog envelope under
+    # "envelope." keys, since this source declares envelope: syslog)
+    parsed = dict(entry.detail["parsed_fields"])
+    envelope_keys = {k for k in parsed if k.startswith("envelope.")}
+    assert {k: v for k, v in parsed.items() if k not in envelope_keys} == _FORTI_FIELDS
     # and the record built before the failure is kept for the operator
     partial = entry.detail["partial_ocsf"]
     assert partial["class_uid"] == 4001

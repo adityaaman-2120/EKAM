@@ -54,13 +54,10 @@ from ulpf.normalize.crosswalk.ecs import to_ecs
 from ulpf.normalize.mapper import Mapper
 from ulpf.normalize.ocsf.base import finalize
 from ulpf.normalize.validator import OcsfValidator
-from ulpf.parse.coordinator import ParseCoordinator
-from ulpf.parse.decode import decode_raw, strip_bom_bytes
+from ulpf.parse.coordinator import ParseCoordinator, parse_for_definition
+from ulpf.parse.decode import decode_raw
 from ulpf.parse.dsl.loader import SourceRegistry
 from ulpf.parse.dsl.schema import SourceDefinition
-from ulpf.parse.engines.util import flatten
-from ulpf.parse.registry import registry as _engine_registry
-from ulpf.parse.syslog_envelope import parse_syslog_envelope
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SOURCE_ID = "inspect"
@@ -165,26 +162,17 @@ def _match(
 def _definition_fields(
     event: RawEvent, definition: SourceDefinition
 ) -> tuple[dict[str, Any], ParseError | None]:
-    """Parse the line with the matched definition's declared engine + options."""
-    _engine_registry.load_engine_modules()
-    spec = definition.parse
-    text, bom_stripped = decode_raw(event.raw)
-    raw_bytes = strip_bom_bytes(event.raw) if bom_stripped else event.raw
-    envelope: dict[str, Any] = {}
-    payload = text
-    if spec.envelope == "syslog":
-        envelope, message = parse_syslog_envelope(raw_bytes)
-        payload = (
-            text if spec.engine in ("cef", "leef") else message.decode("utf-8", errors="replace")
-        )
+    """Parse the line with the matched definition's declared engine + options.
+
+    Delegates to :func:`~ulpf.parse.coordinator.parse_for_definition` — the
+    same authoritative reparse :class:`~ulpf.normalize.stage.NormalizeStage`
+    uses in the live pipeline, so ``inspect`` can never again show a result
+    the running system would not actually produce.
+    """
     try:
-        fields = dict(_engine_registry.get(spec.engine).parse(payload, spec.options))
-    except (UlpfError, ValueError, KeyError) as exc:
-        note = exc.detail if isinstance(exc, UlpfError) else {"error": str(exc)}
-        return {}, ParseError(f"{spec.engine} engine failed", detail=dict(note))
-    if envelope:
-        fields.update(flatten(envelope, prefix="envelope"))
-    return fields, None
+        return parse_for_definition(event.raw, definition), None
+    except ParseError as exc:
+        return {}, exc
 
 
 def _normalize(

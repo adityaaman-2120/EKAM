@@ -27,6 +27,13 @@ class IngestSettings(BaseModel):
     """Network listener ports and intake queue bounds."""
 
     syslog_udp_port: int = 514
+    # UDP syslog is lossy under burst: the kernel receive buffer is finite and
+    # unread datagrams are silently dropped once it fills, with no signal to
+    # either side that it happened (see ulpf/ingest/syslog_udp.py). Raising
+    # SO_RCVBUF gives the kernel more headroom to absorb a burst before a
+    # slow-to-drain queue starts dropping datagrams; it does not make UDP
+    # lossless. CLAUDE.md: benchmark and verification runs must use TCP.
+    syslog_udp_recv_buffer_bytes: int = 4 * 1024 * 1024
     syslog_tcp_port: int = 514
     syslog_tls_port: int = 6514
     http_port: int = 8081

@@ -67,18 +67,45 @@ def test_leef_line() -> None:
     assert parsed.fields["srcPort"] == "3097"
 
 
-def test_csv_line_with_engine_options() -> None:
+def test_csv_line_is_never_engine_dispatched_even_with_engine_options() -> None:
+    """The sniff-based coordinator must not attempt a parse the definition owns.
+
+    ``csv`` always needs a source's own ``columns``/``column_map`` (PAN-OS
+    TRAFFIC's is version-keyed), so it is never engine-dispatched here even
+    when the caller happens to have supplied matching ``engine_options`` --
+    only :func:`~ulpf.parse.coordinator.parse_for_definition`, once a source
+    definition has matched, is allowed to actually parse csv/tsv. Detecting it
+    (for :class:`~ulpf.parse.dsl.loader.SourceRegistry` matching) is still the
+    coordinator's job.
+    """
     # >= 8 commas so the sniffer classifies it as csv
     _, parsed = _parse(b"1,2,3,4,5,6,7,8,9")
     assert parsed.format == "csv"
-    assert parsed.fields == {f"c{i}": str(i + 1) for i in range(9)}
+    assert parsed.fields == {}
+    assert parsed.needs_template_mining is True
 
 
-def test_tsv_line_with_engine_options() -> None:
+def test_tsv_line_is_never_engine_dispatched_even_with_engine_options() -> None:
     # >= 3 tabs so the sniffer classifies it as tsv
     _, parsed = _parse(b"w\tx\ty\tz")
     assert parsed.format == "tsv"
-    assert parsed.fields == {"p": "w", "q": "x", "r": "y", "s": "z"}
+    assert parsed.fields == {}
+    assert parsed.needs_template_mining is True
+
+
+def test_csv_and_tsv_never_raise_regardless_of_options() -> None:
+    """Not even a caller with NO engine_options sees a ParseError for csv/tsv.
+
+    Before, this exact case ("csv" sniffed, no columns configured) raised —
+    which is precisely the bug this design fixes: PAN-OS TRAFFIC would sniff
+    as csv, raise "requires a 'columns' list" on every single event, and that
+    logged an INFO line and corrupted ``ulpf_parse_success_rate`` /
+    ``verify roundtrip``'s reparse_stable_rate for a perfectly healthy source.
+    """
+    coordinator = ParseCoordinator(engine_options={})
+    parsed = coordinator.parse(_raw(b"a,b,c,d,e,f,g,h,i"))
+    assert parsed.format == "csv"
+    assert parsed.fields == {}
 
 
 def test_bare_syslog_line_is_stripped_and_marked_for_drain3() -> None:
@@ -116,12 +143,13 @@ def test_unknown_line_yields_empty_fields_and_mining_flag() -> None:
 
 
 def test_engine_failure_is_reraised_as_parse_error_with_format() -> None:
-    # sniffs as "csv" (>= 8 commas); this coordinator gives the csv engine no
-    # columns, so it raises -> the coordinator wraps it.
-    coordinator = ParseCoordinator(engine_options={})
+    # kv IS engine-dispatched here (self-describing, config-free) -- but a
+    # caller can still misconfigure its separators, and that must surface as
+    # a real ParseError, not be silently swallowed like the csv/tsv case above.
+    coordinator = ParseCoordinator(engine_options={"kv": {"kv_separator": ""}})
     with pytest.raises(ParseError) as exc_info:
-        coordinator.parse(_raw(b"a,b,c,d,e,f,g,h,i"))
-    assert exc_info.value.detail["format"] == "csv"
+        coordinator.parse(_raw(b"action=allow src=10.0.0.1 dst=10.0.0.2 proto=tcp"))
+    assert exc_info.value.detail["format"] == "kv"
     assert "reason" in exc_info.value.detail
 
 

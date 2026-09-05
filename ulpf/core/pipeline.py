@@ -89,13 +89,28 @@ class NoOpStage:
 
 
 class ParseStage:
-    """Stage 2: sniff format, strip the syslog envelope, extract fields.
+    """Stage 2: sniff format, strip the syslog envelope, extract a *best-effort* field hint.
 
-    Wraps :class:`~ulpf.parse.coordinator.ParseCoordinator`. On
-    :class:`~ulpf.core.errors.ParseError` the event is written to the
-    dead-letter queue with ``stage="parse"`` and dropped (``process`` returns
-    ``None``) so the worker continues. Each attempt updates
-    ``ulpf_parse_success_rate``; each success bumps ``ulpf_events_parsed_total``.
+    Wraps :class:`~ulpf.parse.coordinator.ParseCoordinator`. This pass is
+    advisory, not authoritative, and by design never attempts a parse that
+    needs configuration only a source definition owns: the sniffer has no
+    signature for ``grok``/``dissect`` at all, and ``csv``/``tsv`` are
+    deliberately never engine-dispatched here either (both engines
+    fundamentally require a ``columns``/``column_map``/``#fields`` a matched
+    definition supplies — see ``_NO_ENGINE_FORMATS`` in
+    :mod:`ulpf.parse.coordinator`). Such a line produces empty fields here,
+    never a raised :class:`~ulpf.core.errors.ParseError` — that is expected,
+    not a dead event, and it means the field-count metrics below only ever see
+    a genuine engine failure (malformed json/kv/cef/leef), not "this source's
+    engine needed config the sniff pass doesn't have".
+    :class:`~ulpf.normalize.stage.NormalizeStage` does the real, authoritative,
+    single parse once it has matched a source definition
+    (:func:`~ulpf.parse.coordinator.parse_for_definition`), and is the one
+    place that dead-letters a source whose own engine still cannot read it.
+
+    Each attempt updates ``ulpf_parse_success_rate`` (a sniff-based failure
+    still counts as a miss, for that KPI); each success bumps
+    ``ulpf_events_parsed_total``.
     """
 
     name = "parse"
@@ -103,29 +118,23 @@ class ParseStage:
     def __init__(
         self, settings: Settings, coordinator: ParseCoordinator, *, window: int = 1000
     ) -> None:
-        """Wire the coordinator and a dead-letter queue for parse failures."""
+        """Wire the coordinator; ``settings`` kept for signature stability with other stages."""
         self._coordinator = coordinator
-        self._dlq = DeadLetterQueue(settings)
         self._outcomes: deque[int] = deque(maxlen=window)
 
     async def process(self, event: Event) -> Event | None:
-        """Return a :class:`ParsedEvent`, or ``None`` after dead-lettering a failure."""
+        """Return a :class:`ParsedEvent`; never drops the event or dead-letters it."""
         assert isinstance(event, RawEvent)
         try:
             parsed = self._coordinator.parse(event)
         except ParseError as exc:
             self._observe(success=False)
-            self._dlq.write(
-                event,
-                reason=str(exc.detail.get("reason") or "parse_error"),
-                stage=self.name,
-                detail=dict(exc.detail),
-            )
-            _log.warning(
-                "parse failed; event dead-lettered",
+            _log.info(
+                "sniff-based parse could not classify this line; the matched "
+                "source definition's own engine will re-parse it in normalize",
                 extra={"event_uid": event.event_uid, "detail": exc.detail},
             )
-            return None
+            return _unclassified(event)
         self._observe(success=True)
         EVENTS_PARSED.labels(source_type=parsed.source_type or "unknown").inc()
         return parsed
@@ -134,6 +143,23 @@ class ParseStage:
         """Record one parse outcome and refresh ``ulpf_parse_success_rate``."""
         self._outcomes.append(1 if success else 0)
         PARSE_SUCCESS_RATE.set(sum(self._outcomes) / len(self._outcomes))
+
+
+def _unclassified(event: RawEvent) -> ParsedEvent:
+    """A :class:`ParsedEvent` stand-in for 'the sniff-based pass could not read this'.
+
+    Same shape as a line that sniffed as ``unknown``: no fields, flagged for
+    Drain3 template mining. A matching source definition still gets its own
+    authoritative re-parse in :class:`~ulpf.normalize.stage.NormalizeStage`.
+    """
+    return ParsedEvent(
+        **event.model_dump(),
+        format="unknown",
+        source_type=None,
+        fields={},
+        envelope={},
+        needs_template_mining=True,
+    )
 
 
 class Pipeline:

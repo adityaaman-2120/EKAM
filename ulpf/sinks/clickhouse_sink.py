@@ -53,7 +53,9 @@ _SPOOL_DIR = "clickhouse_spool"
 # ClickHouse column types. The sorting-key columns are non-nullable; everything
 # else mirrors the (nullable) Parquet silver schema.
 _KEY_COLUMNS = ("time", "source_type", "event_uid")
-_STRING_COLUMNS = frozenset({"event_uid", "raw_hash", "source_type", "src_ip", "dst_ip", "protocol"})
+_STRING_COLUMNS = frozenset(
+    {"event_uid", "raw_hash", "source_type", "src_ip", "dst_ip", "protocol"}
+)
 _JSON_COLUMNS = ("unmapped", "enrichments")
 
 
@@ -136,7 +138,8 @@ class ClickHouseSink:
             self._spool_rows(self._buffer)
             _log.error(
                 "ClickHouse unreachable at shutdown; spooled %d rows to %s (nothing dropped)",
-                len(self._buffer), self._spool,
+                len(self._buffer),
+                self._spool,
             )
             self._buffer = []
 
@@ -199,7 +202,11 @@ class ClickHouseSink:
             return outcome
 
     async def _deliver(self, rows: list[dict[str, Any]]) -> bool:
-        """POST ``rows`` with retry. True = handled (delivered or spooled); False = keep + retry later."""
+        """POST ``rows`` with retry.
+
+        Returns True when handled (delivered or spooled) and False to keep the
+        rows buffered for a later retry.
+        """
         body = self._insert_head + "\n".join(json.dumps(row, separators=(",", ":")) for row in rows)
         for attempt in range(self._cfg.max_retries + 1):
             try:
@@ -208,8 +215,9 @@ class ClickHouseSink:
                 await self._post(body)
             except _FatalInsert as exc:
                 self._spool_rows(rows)
-                _log.error("ClickHouse rejected a batch (not retried): %s; spooled %d rows",
-                           exc, len(rows))
+                _log.error(
+                    "ClickHouse rejected a batch (not retried): %s; spooled %d rows", exc, len(rows)
+                )
                 return True
             except _RetryableInsert as exc:
                 self._note_failure(exc)
@@ -242,8 +250,10 @@ class ClickHouseSink:
         assert self._client is not None
         try:
             response = await self._client.post(
-                self._base_url, content=self._create_table_sql(),
-                params={"database": self._cfg.database}, headers=self._headers(),
+                self._base_url,
+                content=self._create_table_sql(),
+                params={"database": self._cfg.database},
+                headers=self._headers(),
             )
         except httpx.HTTPError as exc:
             raise _RetryableInsert(f"table DDL transport error: {exc}") from exc
@@ -316,7 +326,9 @@ class ClickHouseSink:
         if not self._spool.is_dir():
             return
         for path in sorted(self._spool.glob("batch-*.jsonl")):
-            rows = [json.loads(line) for line in path.read_text("utf-8").splitlines() if line.strip()]
+            rows = [
+                json.loads(line) for line in path.read_text("utf-8").splitlines() if line.strip()
+            ]
             self._buffer[:0] = rows  # replay before newer events
             path.unlink()
         if self._buffer:

@@ -42,7 +42,7 @@ dev = [
     "pytest-cov",
     "hypothesis",
     "httpx",
-    "ruff",
+    "ruff==0.16.5",  # pin exactly: keep in step with .pre-commit-config.yaml's `rev`
     "mypy",
     "pre-commit",
 ]

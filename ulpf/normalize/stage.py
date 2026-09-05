@@ -8,12 +8,21 @@ validated.
 
 1. :meth:`~ulpf.parse.dsl.loader.SourceRegistry.match` finds the source
    definition. No match -> the event is passed through as
-   ``source_type="unknown"`` (fields kept for Drain3) — **not** dead-lettered.
-2. :meth:`~ulpf.normalize.mapper.Mapper.apply` maps the flat fields to a nested
+   ``source_type="unknown"`` (``ParseStage``'s sniff-based fields kept for
+   Drain3) — **not** dead-lettered.
+2. Once matched, :func:`~ulpf.parse.coordinator.parse_for_definition`
+   re-parses the RAW bytes with that definition's own declared engine and
+   options — the authoritative parse; ``ParseStage``'s sniff-based fields are
+   only ever a hint used for matching, since the sniffer cannot recognise
+   ``grok``/``dissect`` and cannot supply a source's own ``csv`` columns etc.
+   If the source's own engine still cannot read the line, that is a
+   :class:`~ulpf.core.errors.ParseError` and the event is dead-lettered here
+   (``reason`` from the engine, e.g. ``"grok_no_match"``).
+3. :meth:`~ulpf.normalize.mapper.Mapper.apply` maps those fields to a nested
    OCSF record; a :class:`~ulpf.core.errors.MappingError` dead-letters the event
    with the parsed fields and partial record in ``detail``.
-3. :func:`~ulpf.normalize.ocsf.base.finalize` fills derived name fields.
-4. A :class:`~ulpf.core.models.NormalizedEvent` is emitted and
+4. :func:`~ulpf.normalize.ocsf.base.finalize` fills derived name fields.
+5. A :class:`~ulpf.core.models.NormalizedEvent` is emitted and
    ``ulpf_events_normalized_total{source_type,class_uid}`` incremented.
 
 :class:`ValidateStage` (after :class:`~ulpf.enrich.stage.EnrichStage`):
@@ -29,15 +38,17 @@ validated.
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from ulpf.config.settings import Settings
-from ulpf.core.errors import MappingError
+from ulpf.core.errors import MappingError, ParseError
 from ulpf.core.metrics import EVENTS_NORMALIZED
 from ulpf.core.models import NormalizedEvent, ParsedEvent, RawEvent
 from ulpf.core.pipeline import Event
 from ulpf.normalize.mapper import Mapper
 from ulpf.normalize.ocsf.base import finalize
 from ulpf.normalize.validator import OcsfValidator
+from ulpf.parse.coordinator import parse_for_definition
 from ulpf.parse.dsl.loader import SourceRegistry
 from ulpf.parse.dsl.schema import SourceDefinition
 from ulpf.sinks.dlq import DeadLetterQueue
@@ -61,20 +72,26 @@ class NormalizeStage:
         self._dlq = DeadLetterQueue(settings)
 
     async def process(self, event: Event) -> NormalizedEvent | None:
-        """Normalize one parsed event, or ``None`` if a mapping failure dead-lettered it."""
+        """Normalize one event; ``None`` if a parse or mapping failure dead-lettered it."""
         assert isinstance(event, ParsedEvent)
         definition = self._registry.match(event)
         if definition is None:
             return self._passthrough(event)
 
         try:
+            fields = parse_for_definition(event.raw, definition)
+        except ParseError as exc:
+            self._dead_letter_parse_failure(event, definition, exc)
+            return None
+
+        try:
             ocsf = finalize(
                 self._mapper.apply(
-                    definition, event.fields, event_uid=event.event_uid, raw_hash=event.raw_hash
+                    definition, fields, event_uid=event.event_uid, raw_hash=event.raw_hash
                 )
             )
         except MappingError as exc:
-            self._dead_letter_mapping_failure(event, definition, exc)
+            self._dead_letter_mapping_failure(event, definition, fields, exc)
             return None
 
         class_uid = ocsf.get("class_uid")
@@ -92,17 +109,47 @@ class NormalizeStage:
             enrichment={},
         )
 
+    def _dead_letter_parse_failure(
+        self, event: ParsedEvent, definition: SourceDefinition, exc: ParseError
+    ) -> None:
+        """Dead-letter a source whose OWN declared engine still could not read the line.
+
+        Distinct from a mapping failure: the source's ``detect`` rule matched
+        the line, but ``parse_for_definition`` — using that source's own
+        engine and options, the authoritative parse — could not extract fields
+        from it at all.
+        """
+        self._dlq.write(
+            event,
+            reason=str(exc.detail.get("reason") or "source_parse_failed"),
+            stage=self.name,
+            detail={"source_type": definition.name, "error": str(exc), **exc.detail},
+        )
+        _log.warning(
+            "matched source's own engine failed to parse the event; dead-lettered",
+            extra={
+                "source_type": definition.name,
+                "event_uid": event.event_uid,
+                "detail": exc.detail,
+            },
+        )
+
     def _dead_letter_mapping_failure(
-        self, event: ParsedEvent, definition: SourceDefinition, exc: MappingError
+        self,
+        event: ParsedEvent,
+        definition: SourceDefinition,
+        fields: dict[str, Any],
+        exc: MappingError,
     ) -> None:
         """Dead-letter a mapping failure, keeping the parsed fields and partial record.
 
         The raw event is already in bronze; this makes the DLQ entry show *what
-        was parsed* and *how far mapping got*, so an operator can fix the source
-        definition without replaying the log.
+        was parsed* (via the source's own engine, not ``ParseStage``'s sniff-
+        based hint) and *how far mapping got*, so an operator can fix the
+        source definition without replaying the log.
         """
         detail = dict(exc.detail)
-        detail.setdefault("parsed_fields", dict(event.fields))
+        detail.setdefault("parsed_fields", dict(fields))
         detail.setdefault("partial_ocsf", {})
         self._dlq.write(
             event,
@@ -116,7 +163,7 @@ class NormalizeStage:
                 "source_type": definition.name,
                 "event_uid": event.event_uid,
                 "target": detail.get("target"),
-                "field_count": len(event.fields),
+                "field_count": len(fields),
             },
         )
 

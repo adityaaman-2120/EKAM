@@ -27,10 +27,9 @@ _TODAY = dt.datetime.now(dt.UTC).date().isoformat()
 # ingest-date partition (which is always "now").
 _GOOD_LINES = [
     (
-        '<189>date=%s time=22:14:%02d devname="FGT" logid="0000000013" '
-        'type="traffic" subtype="forward" srcip=10.0.0.%d srcport=51000 '
-        'dstip=8.8.8.8 dstport=443 proto=6 action="deny" policyid=9 sentbyte=100 rcvdbyte=200'
-        % (_TODAY, i, i)
+        f'<189>date={_TODAY} time=22:14:{i:02d} devname="FGT" logid="0000000013" '
+        f'type="traffic" subtype="forward" srcip=10.0.0.{i} srcport=51000 '
+        f'dstip=8.8.8.8 dstport=443 proto=6 action="deny" policyid=9 sentbyte=100 rcvdbyte=200'
     ).encode()
     for i in range(5)
 ]
@@ -127,6 +126,61 @@ def test_reprocess_rich_output_mentions_date_and_scope(populated: Settings) -> N
     assert result.exit_code == 0, result.stdout
     assert _TODAY in result.stdout
     assert "reprocess" in result.stdout
+
+
+# --------------------------------------------------------------------------
+# bronze ingest date vs. silver event date
+
+
+def test_reprocess_writes_to_silver_under_the_event_date_not_the_bronze_date(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Bronze partitions by ingest date (always "today" here); FortiGate's own
+
+    ``date=`` field can say something else entirely. The corrected row must
+    land in silver under THAT event date, never under the bronze ingest date.
+    """
+    settings = _settings(tmp_path)
+    event_date = "2026-08-20"
+    assert event_date != _TODAY
+    line = (
+        f'<189>date={event_date} time=22:14:00 devname="FGT" logid="0000000013" '
+        f'type="traffic" subtype="forward" srcip=10.0.0.1 srcport=51000 '
+        f'dstip=8.8.8.8 dstport=443 proto=6 action="deny" policyid=9 sentbyte=100 rcvdbyte=200'
+    ).encode()
+    _seed_bronze(settings, [line])  # ingest_time_ns is "now" -> bronze lands under date=_TODAY
+    monkeypatch.setattr(reprocess_mod, "_load_settings", lambda: settings)
+
+    assert (Path(settings.storage.bronze_path) / f"date={_TODAY}").is_dir()
+
+    result = runner.invoke(app, ["reprocess", "--date", _TODAY, "--json"])
+    assert result.exit_code == 0, result.stdout
+    body = json.loads(result.stdout)
+
+    assert body["date"] == _TODAY  # the bronze ingest date that was read
+    assert body["silver_dates"] == [event_date]  # the event date silver was written under
+
+    assert len(_silver_rows(settings, event_date, "fortigate_traffic")) == 1
+    assert _silver_rows(settings, _TODAY, "fortigate_traffic") == []  # nothing under ingest date
+
+
+def test_reprocess_rich_output_prints_both_bronze_and_silver_dates(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = _settings(tmp_path)
+    event_date = "2026-08-20"
+    line = (
+        f'<189>date={event_date} time=22:14:00 devname="FGT" logid="0000000013" '
+        f'type="traffic" subtype="forward" srcip=10.0.0.1 srcport=51000 '
+        f'dstip=8.8.8.8 dstport=443 proto=6 action="deny" policyid=9 sentbyte=100 rcvdbyte=200'
+    ).encode()
+    _seed_bronze(settings, [line])
+    monkeypatch.setattr(reprocess_mod, "_load_settings", lambda: settings)
+
+    result = runner.invoke(app, ["reprocess", "--date", _TODAY])
+    assert result.exit_code == 0, result.stdout
+    assert f"bronze date={_TODAY}" in result.stdout
+    assert f"silver dates={event_date}" in result.stdout
 
 
 # --------------------------------------------------------------------------

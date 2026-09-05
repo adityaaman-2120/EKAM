@@ -1,4 +1,4 @@
-.PHONY: install dev test lint format format-check typecheck run clean up down logs ps
+.PHONY: install dev test lint format format-check check typecheck run clean up down logs ps
 
 COMPOSE ?= docker compose
 
@@ -21,6 +21,15 @@ format:
 format-check:
 	ruff format --check .
 	ruff check --select I .
+
+# Run before every commit and at the end of every phase. Does not depend on
+# pre-commit being installed (Windows-friendly equivalent: scripts/win/check.ps1).
+# Each line is its own command, so `make` already stops at the first failure.
+check:
+	ruff format .
+	ruff check . --fix
+	ruff check .
+	pytest -q
 
 typecheck:
 	mypy ulpf

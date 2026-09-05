@@ -33,6 +33,27 @@ and flushes them to
 buffer reaches ``max_rows`` (default 10 000) or ``flush_interval_seconds``
 (default 60) have elapsed. Compression is ZSTD.
 
+PARTITION KEY: EVENT DATE, NOT INGEST DATE
+-------------------------------------------
+This is deliberate and differs from bronze. :class:`~ulpf.sinks.raw_store.RawStore`
+partitions by **ingest date** — evidence answers "when did we receive this
+byte-for-byte payload", which only ever advances with wall-clock time as events
+arrive, so a fixed, monotonic partition key is what makes it durable, replayable
+evidence. Silver partitions by **event date** — the OCSF ``time`` field, i.e.
+when the underlying activity actually happened on the wire — because silver
+exists to be queried and modeled: "every FortiGate deny on 2026-09-04" must
+mean the 4th by *event* time, not by whatever day ULPF happened to receive the
+syslog line. See :func:`epoch_ns_to_date` and :meth:`ParquetSink.write` below.
+
+A source with clock skew, a delayed forwarder, or a batch upload can log a
+2026-09-04 event that is not ingested (and therefore not bronze-partitioned)
+until 2026-09-05 or later — bronze and silver dates for that event will
+legitimately differ, and that is correct, not a bug. It is also why
+``ulpf reprocess --date D`` (which selects bronze by **ingest** date D) can
+write to *several* silver date partitions in one run: see
+:mod:`ulpf.cli.reprocess`, which prints both explicitly for exactly this
+reason.
+
 ``source_type`` is written **both** in the Hive path and as a required data
 column (see below), so read a whole tree with an explicit unified schema, e.g.::
 
@@ -142,8 +163,14 @@ class ParquetSink:
     # -- writing ---------------------------------------------------------
 
     def write(self, event: NormalizedEvent) -> None:
-        """Buffer one event for its ``(date, source_type)`` partition; auto-flush if due."""
-        date = _epoch_ns_to_date(event.ocsf.get("time") or event.ingest_time_ns)
+        """Buffer one event for its ``(date, source_type)`` partition; auto-flush if due.
+
+        The partition date is the OCSF **event** time (``ocsf["time"]``), not
+        ``ingest_time_ns`` — see PARTITION KEY in the module docstring.
+        ``ingest_time_ns`` is only the fallback for an event whose mapping never
+        set ``time`` at all.
+        """
+        date = epoch_ns_to_date(event.ocsf.get("time") or event.ingest_time_ns)
         key = (date, event.source_type or "unknown")
         self._buffer.setdefault(key, []).append(_row(event))
         self._buffered += 1
@@ -304,8 +331,13 @@ def _as_str(value: Any) -> str | None:
     return None if value is None else str(value)
 
 
-def _epoch_ns_to_date(epoch_ns: Any) -> str:
-    """UTC ``YYYY-MM-DD`` for an epoch-nanoseconds value (now if unusable)."""
+def epoch_ns_to_date(epoch_ns: Any) -> str:
+    """UTC ``YYYY-MM-DD`` for an epoch-nanoseconds value (now if unusable).
+
+    Public (not ``_``-prefixed) because :mod:`ulpf.cli.reprocess` needs the
+    exact same event-date derivation :meth:`ParquetSink.write` uses, to report
+    which silver date partitions a reprocess run actually touches.
+    """
     try:
         seconds = int(epoch_ns) // 1_000_000_000
         return dt.datetime.fromtimestamp(seconds, dt.UTC).strftime("%Y-%m-%d")

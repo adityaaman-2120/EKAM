@@ -18,7 +18,17 @@ green/red table:
     recorded SHA-256. **This alone is requirement (a)** (no information loss),
     and it is the panel headline.
   - ``reparse_stable_rate`` — parsing the raw twice yields the identical field
-    dict (parser determinism).
+    dict (parser determinism). Once a source definition matches, this reparses
+    with :func:`~ulpf.parse.coordinator.parse_for_definition` — that source's
+    own declared engine and options — the same authoritative, definition-driven
+    path :class:`~ulpf.normalize.stage.NormalizeStage` uses in the live
+    pipeline. An unmatched line falls back to the definition-less, sniff-based
+    :meth:`~ulpf.parse.coordinator.ParseCoordinator.parse`. This distinction
+    matters concretely for a source with a version-keyed ``column_map`` (PAN-OS
+    TRAFFIC): the sniff-based pass can never read csv/tsv on its own (see
+    :mod:`ulpf.parse.coordinator`), so scoring reparse-stability against it
+    would report that healthy source as 0% "parser non-determinism" — a false
+    reading of a config gap, not an actual determinism bug.
   - ``renormalize_stable_rate`` — normalizing twice yields the identical OCSF
     record, computed **only over events that normalized successfully the first
     time**. Events whose mapping failed are excluded from that denominator and
@@ -51,7 +61,7 @@ from ulpf.integrity.proofs import EventProof, ProofBuilder
 from ulpf.integrity.signing import Signer, Verifier
 from ulpf.normalize.mapper import Mapper
 from ulpf.normalize.ocsf.base import finalize
-from ulpf.parse.coordinator import ParseCoordinator
+from ulpf.parse.coordinator import ParseCoordinator, parse_for_definition
 from ulpf.parse.dsl.loader import SourceRegistry
 from ulpf.sinks.raw_store import RawStore
 
@@ -506,39 +516,77 @@ def _parse_signature(parsed: ParsedEvent) -> str:
     )
 
 
-def _normalize_signature(definition: Any, parsed: ParsedEvent) -> str:
+def _fields_signature(fields: dict[str, Any]) -> str:
+    return json.dumps(fields, sort_keys=True, default=str)
+
+
+def _normalize_signature(definition: Any, fields: dict[str, Any], event: RawEvent) -> str:
     ocsf = finalize(
-        Mapper().apply(
-            definition, parsed.fields, event_uid=parsed.event_uid, raw_hash=parsed.raw_hash
-        )
+        Mapper().apply(definition, fields, event_uid=event.event_uid, raw_hash=event.raw_hash)
     )
     return json.dumps(ocsf, sort_keys=True, default=str)
 
 
-def _check_reparse(
-    event: RawEvent, coordinator: ParseCoordinator
-) -> tuple[ParsedEvent | None, bool, str]:
-    """``(parsed, stable, note)`` — parse the raw twice and compare."""
+def _sniff_for_match(event: RawEvent, coordinator: ParseCoordinator) -> ParsedEvent | None:
+    """Format detection + matching only — see :mod:`ulpf.parse.coordinator`.
+
+    Never raises: a format needing a source's own configuration (csv, tsv)
+    yields empty fields here rather than a ``ParseError``, exactly like the
+    live ``ParseStage``. ``None`` only for a genuinely malformed
+    json/kv/cef/leef line.
+    """
     try:
-        first = coordinator.parse(event)
-        second = coordinator.parse(event)
+        return coordinator.parse(event)
+    except ParseError:
+        return None
+
+
+def _check_reparse(
+    event: RawEvent,
+    definition: Any,
+    coordinator: ParseCoordinator,
+) -> tuple[dict[str, Any] | None, bool, str]:
+    """``(fields, stable, note)`` — reparse the raw twice and compare.
+
+    Once a source definition has matched, this reparses with
+    :func:`~ulpf.parse.coordinator.parse_for_definition` — that definition's
+    own declared engine and options, the same authoritative path
+    ``NormalizeStage`` uses live. Only an unmatched line falls back to the
+    definition-less, sniff-based :meth:`ParseCoordinator.parse` (the
+    ``source_type="unknown"`` / Drain3 path) for this check.
+    """
+    if definition is not None:
+        try:
+            first = parse_for_definition(event.raw, definition)
+            second = parse_for_definition(event.raw, definition)
+        except ParseError as exc:
+            return None, False, f"parse failed: {exc}"
+        if _fields_signature(first) != _fields_signature(second):
+            return first, False, "parse is not deterministic"
+        return first, True, ""
+
+    try:
+        first_parsed = coordinator.parse(event)
+        second_parsed = coordinator.parse(event)
     except ParseError as exc:
         return None, False, f"parse failed: {exc}"
-    if first.raw != event.raw:
-        return first, False, "raw bytes changed while parsing"
-    if _parse_signature(first) != _parse_signature(second):
-        return first, False, "parse is not deterministic"
-    return first, True, ""
+    if first_parsed.raw != event.raw:
+        return None, False, "raw bytes changed while parsing"
+    if _parse_signature(first_parsed) != _parse_signature(second_parsed):
+        return first_parsed.fields, False, "parse is not deterministic"
+    return first_parsed.fields, True, ""
 
 
-def _check_renormalize(definition: Any, parsed: ParsedEvent) -> tuple[bool, bool, str]:
+def _check_renormalize(
+    definition: Any, fields: dict[str, Any], event: RawEvent
+) -> tuple[bool, bool, str]:
     """``(normalized_originally, stable, note)`` — normalize twice and compare."""
     try:
-        first = _normalize_signature(definition, parsed)
+        first = _normalize_signature(definition, fields, event)
     except MappingError as exc:
         return False, False, f"normalization failed (dead-lettered): {exc}"
     try:
-        second = _normalize_signature(definition, parsed)
+        second = _normalize_signature(definition, fields, event)
     except MappingError:
         return True, False, "normalization is not deterministic (2nd pass raised)"
     if first != second:
@@ -553,20 +601,22 @@ def _roundtrip_one(
     byte_lossless = sha256_hex(event.raw) == event.raw_hash
     note = "" if byte_lossless else "raw bytes were altered in storage"
 
-    parsed, reparse_stable, parse_note = _check_reparse(event, coordinator)
+    # sniff (format detection only) -> match, exactly like the live pipeline;
+    # never a definition-owned parse (see ulpf.parse.coordinator module docs)
+    sniffed = _sniff_for_match(event, coordinator)
+    definition = registry.match(sniffed) if sniffed is not None else None
+
+    fields, reparse_stable, parse_note = _check_reparse(event, definition, coordinator)
     note = note or parse_note
 
-    normalized_originally = renormalize_stable = dead_lettered = no_source_match = False
-    if parsed is not None:
-        definition = registry.match(parsed)
-        if definition is None:
-            no_source_match = True
-        else:
-            normalized_originally, renormalize_stable, norm_note = _check_renormalize(
-                definition, parsed
-            )
-            dead_lettered = not normalized_originally
-            note = note or norm_note
+    normalized_originally = renormalize_stable = dead_lettered = False
+    no_source_match = definition is None
+    if fields is not None and definition is not None:
+        normalized_originally, renormalize_stable, norm_note = _check_renormalize(
+            definition, fields, event
+        )
+        dead_lettered = not normalized_originally
+        note = note or norm_note
 
     return _Outcome(
         byte_lossless,

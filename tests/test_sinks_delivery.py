@@ -64,7 +64,11 @@ async def test_retries_exhausted_returns_false() -> None:
         raise RetryableDeliveryError("down")
 
     ok = await deliver_with_retry(
-        send, max_retries=2, backoff_base_seconds=0.01, backoff_max_seconds=1.0, sleep=RecordingSleep()
+        send,
+        max_retries=2,
+        backoff_base_seconds=0.01,
+        backoff_max_seconds=1.0,
+        sleep=RecordingSleep(),
     )
     assert ok is False and attempts["n"] == 3  # first try + 2 retries
 
@@ -95,8 +99,12 @@ async def test_on_attempt_failed_callback_receives_attempt_and_fatality() -> Non
         seen.append((attempt, fatal))
 
     ok = await deliver_with_retry(
-        send, max_retries=5, backoff_base_seconds=0.01, backoff_max_seconds=1.0,
-        sleep=RecordingSleep(), on_attempt_failed=on_fail,
+        send,
+        max_retries=5,
+        backoff_base_seconds=0.01,
+        backoff_max_seconds=1.0,
+        sleep=RecordingSleep(),
+        on_attempt_failed=on_fail,
     )
     assert ok is False
     assert seen == [(0, False), (1, True)]
@@ -111,7 +119,10 @@ async def test_max_retries_zero_tries_exactly_once(max_retries: int) -> None:
         raise RetryableDeliveryError("down")
 
     ok = await deliver_with_retry(
-        send, max_retries=max_retries, backoff_base_seconds=0.01, backoff_max_seconds=1.0,
+        send,
+        max_retries=max_retries,
+        backoff_base_seconds=0.01,
+        backoff_max_seconds=1.0,
         sleep=RecordingSleep(),
     )
     assert ok is False and attempts["n"] == 1

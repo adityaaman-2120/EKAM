@@ -9,6 +9,7 @@ few ~128 MB files, losing no rows.
     ulpf compact --date 2026-09-01
     ulpf compact --all           # every partition under silver_path
     ulpf compact --all --json    # machine-readable
+    ulpf compact --all --min-files 1   # force a rewrite even of single-file partitions
 """
 
 from __future__ import annotations
@@ -22,7 +23,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from ulpf.config.settings import Settings, get_settings
-from ulpf.sinks.compaction import CompactionResult, Compactor
+from ulpf.sinks.compaction import DEFAULT_MIN_FILES, CompactionResult, Compactor
 
 
 def _load_settings() -> Settings:
@@ -41,8 +42,13 @@ def _human_bytes(n: int) -> str:
 
 def _render(console: Console, results: list[CompactionResult]) -> None:
     if not results:
-        console.print(Panel("[yellow]No silver partitions to compact.[/]", title="compact",
-                            border_style="yellow"))
+        console.print(
+            Panel(
+                "[yellow]No silver partitions to compact.[/]",
+                title="compact",
+                border_style="yellow",
+            )
+        )
         return
 
     table = Table(title="compaction", border_style="cyan")
@@ -61,19 +67,38 @@ def _render(console: Console, results: list[CompactionResult]) -> None:
 
     merged = sum(r.files_before - r.files_after for r in results if r.compacted)
     touched = sum(1 for r in results if r.compacted)
-    console.print(Panel(
-        f"[bold green]{touched} partition(s) compacted[/] · {merged} files removed",
-        title="compact", border_style="green"))
+    console.print(
+        Panel(
+            f"[bold green]{touched} partition(s) compacted[/] · {merged} files removed",
+            title="compact",
+            border_style="green",
+        )
+    )
 
 
 def compact(
-    date: str | None = typer.Option(None, "--date", help="Only compact this ingest date (YYYY-MM-DD)."),
-    all_partitions: bool = typer.Option(False, "--all", help="Compact every partition under silver_path."),
+    date: str | None = typer.Option(
+        None, "--date", help="Only compact this ingest date (YYYY-MM-DD)."
+    ),
+    all_partitions: bool = typer.Option(
+        False, "--all", help="Compact every partition under silver_path."
+    ),
     json_out: bool = typer.Option(False, "--json", help="Machine-readable output."),
+    min_files: int = typer.Option(
+        DEFAULT_MIN_FILES,
+        "--min-files",
+        min=1,
+        help=(
+            "Compact a partition only once it has at least this many part files "
+            f"(default {DEFAULT_MIN_FILES}). Pass 1 to force a rewrite even of "
+            "single-file partitions, e.g. to demonstrate the merge path on a "
+            "small dataset."
+        ),
+    ),
 ) -> None:
     """Merge the small Parquet files in each silver partition into a few large ones."""
     settings = _load_settings()
-    compactor = Compactor(settings)
+    compactor = Compactor(settings, min_files=min_files)
 
     if all_partitions:
         results = compactor.compact_all()

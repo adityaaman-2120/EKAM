@@ -174,7 +174,9 @@ async def test_creates_the_index_template_with_ecs_field_types(tmp_path: Path) -
 async def test_template_failure_does_not_disable_the_sink(tmp_path: Path) -> None:
     fake = FakeOpenSearch()
     fake.template_status = 500
-    sink = OpenSearchSink(_settings(tmp_path, batch_docs=1), client=fake.client(), sleep=RecordingSleep())
+    sink = OpenSearchSink(
+        _settings(tmp_path, batch_docs=1), client=fake.client(), sleep=RecordingSleep()
+    )
     await sink.start(timer=False)
     await sink.write(_ne("a"))
     assert len(fake.bulk_requests) == 1  # still indexes despite the template failure
@@ -187,7 +189,9 @@ async def test_template_failure_does_not_disable_the_sink(tmp_path: Path) -> Non
 
 async def test_bulk_body_indexes_the_ecs_crosswalk_not_raw_ocsf(tmp_path: Path) -> None:
     fake = FakeOpenSearch()
-    sink = OpenSearchSink(_settings(tmp_path, batch_docs=2), client=fake.client(), sleep=RecordingSleep())
+    sink = OpenSearchSink(
+        _settings(tmp_path, batch_docs=2), client=fake.client(), sleep=RecordingSleep()
+    )
     await sink.start(timer=False)
 
     event = _ne("evt-1")
@@ -206,7 +210,9 @@ async def test_bulk_body_indexes_the_ecs_crosswalk_not_raw_ocsf(tmp_path: Path) 
 
 async def test_index_name_is_derived_from_the_ecs_timestamp(tmp_path: Path) -> None:
     fake = FakeOpenSearch()
-    sink = OpenSearchSink(_settings(tmp_path, batch_docs=1), client=fake.client(), sleep=RecordingSleep())
+    sink = OpenSearchSink(
+        _settings(tmp_path, batch_docs=1), client=fake.client(), sleep=RecordingSleep()
+    )
     await sink.start(timer=False)
     await sink.write(_ne("a"))
     action = fake.bulk_lines()[0]
@@ -216,7 +222,9 @@ async def test_index_name_is_derived_from_the_ecs_timestamp(tmp_path: Path) -> N
 
 async def test_timer_flushes_a_partial_batch(tmp_path: Path) -> None:
     fake = FakeOpenSearch()
-    sink = OpenSearchSink(_settings(tmp_path, batch_docs=1000, batch_seconds=0.01), client=fake.client())
+    sink = OpenSearchSink(
+        _settings(tmp_path, batch_docs=1000, batch_seconds=0.01), client=fake.client()
+    )
     await sink.start()
     try:
         await sink.write(_ne("a"))
@@ -238,7 +246,9 @@ async def test_retries_a_failed_batch_then_succeeds(tmp_path: Path) -> None:
     fake.bulk_responses = [(503, None)]
     sleep = RecordingSleep()
     sink = OpenSearchSink(
-        _settings(tmp_path, batch_docs=1, backoff_base_seconds=0.2), client=fake.client(), sleep=sleep
+        _settings(tmp_path, batch_docs=1, backoff_base_seconds=0.2),
+        client=fake.client(),
+        sleep=sleep,
     )
     await sink.start(timer=False)
     await sink.write(_ne("a"))
@@ -251,7 +261,9 @@ async def test_persistent_failure_is_dropped_and_never_blocks(tmp_path: Path) ->
     fake = FakeOpenSearch()
     fake.bulk_default = 503
     sink = OpenSearchSink(
-        _settings(tmp_path, batch_docs=2, max_retries=1), client=fake.client(), sleep=RecordingSleep()
+        _settings(tmp_path, batch_docs=2, max_retries=1),
+        client=fake.client(),
+        sleep=RecordingSleep(),
     )
     await sink.start(timer=False)
     await sink.write(_ne("a"))
@@ -265,7 +277,9 @@ async def test_persistent_failure_is_dropped_and_never_blocks(tmp_path: Path) ->
 async def test_fatal_4xx_is_dropped_without_retrying(tmp_path: Path) -> None:
     fake = FakeOpenSearch()
     fake.bulk_default = 400
-    sink = OpenSearchSink(_settings(tmp_path, batch_docs=1), client=fake.client(), sleep=RecordingSleep())
+    sink = OpenSearchSink(
+        _settings(tmp_path, batch_docs=1), client=fake.client(), sleep=RecordingSleep()
+    )
     await sink.start(timer=False)
     await sink.write(_ne("a"))
     assert len(fake.bulk_requests) == 1  # a single attempt, no retry
@@ -289,7 +303,9 @@ async def test_partial_item_errors_are_logged_but_the_batch_is_not_retried(
             },
         )
     ]
-    sink = OpenSearchSink(_settings(tmp_path, batch_docs=2), client=fake.client(), sleep=RecordingSleep())
+    sink = OpenSearchSink(
+        _settings(tmp_path, batch_docs=2), client=fake.client(), sleep=RecordingSleep()
+    )
     await sink.start(timer=False)
     with caplog.at_level(logging.WARNING, logger="ulpf.sinks.opensearch_sink"):
         await sink.write(_ne("a"))
@@ -301,7 +317,9 @@ async def test_partial_item_errors_are_logged_but_the_batch_is_not_retried(
 
 async def test_close_flushes_pending_docs_and_is_idempotent(tmp_path: Path) -> None:
     fake = FakeOpenSearch()
-    sink = OpenSearchSink(_settings(tmp_path, batch_docs=1000), client=fake.client(), sleep=RecordingSleep())
+    sink = OpenSearchSink(
+        _settings(tmp_path, batch_docs=1000), client=fake.client(), sleep=RecordingSleep()
+    )
     await sink.start(timer=False)
     await sink.write(_ne("a"))
     assert fake.bulk_requests == []

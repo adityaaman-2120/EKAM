@@ -92,7 +92,8 @@ class SplunkHecSink:
         if not self._enabled:
             _log.warning(
                 "Splunk HEC at %s is unreachable/unhealthy; the sink is DISABLED for this run "
-                "(the pipeline continues without it)", self._cfg.url,
+                "(the pipeline continues without it)",
+                self._cfg.url,
             )
         self._started = True
         self._closed = False
@@ -148,8 +149,12 @@ class SplunkHecSink:
             await self._post_events(body)
 
         def _on_fail(attempt: int, exc: Exception, fatal: bool) -> None:
-            _log.warning("Splunk HEC attempt %d failed (%s): %s", attempt + 1,
-                        "fatal" if fatal else "retrying", exc)
+            _log.warning(
+                "Splunk HEC attempt %d failed (%s): %s",
+                attempt + 1,
+                "fatal" if fatal else "retrying",
+                exc,
+            )
 
         delivered = await deliver_with_retry(
             _send,

@@ -134,7 +134,9 @@ async def test_creates_replacing_merge_tree_table_on_start(tmp_path: Path) -> No
 
 async def test_flushes_at_batch_rows_with_the_expected_columns(tmp_path: Path) -> None:
     fake = FakeClickHouse()
-    sink = ClickHouseSink(_settings(tmp_path, batch_rows=3), client=fake.client(), sleep=RecordingSleep())
+    sink = ClickHouseSink(
+        _settings(tmp_path, batch_rows=3), client=fake.client(), sleep=RecordingSleep()
+    )
     await sink.start(timer=False)
 
     for i in range(3):
@@ -156,7 +158,9 @@ async def test_flushes_at_batch_rows_with_the_expected_columns(tmp_path: Path) -
 
 async def test_timer_flushes_a_partial_batch(tmp_path: Path) -> None:
     fake = FakeClickHouse()
-    sink = ClickHouseSink(_settings(tmp_path, batch_rows=1000, batch_seconds=0.01), client=fake.client())
+    sink = ClickHouseSink(
+        _settings(tmp_path, batch_rows=1000, batch_seconds=0.01), client=fake.client()
+    )
     await sink.start()  # real timer
     try:
         await sink.write(_ne("a"))
@@ -235,7 +239,9 @@ async def test_backpressure_when_clickhouse_is_down_and_never_drops(tmp_path: Pa
 async def test_non_retryable_4xx_batch_is_spooled_not_retried(tmp_path: Path) -> None:
     fake = FakeClickHouse()
     fake.insert_default = 400
-    sink = ClickHouseSink(_settings(tmp_path, batch_rows=2), client=fake.client(), sleep=RecordingSleep())
+    sink = ClickHouseSink(
+        _settings(tmp_path, batch_rows=2), client=fake.client(), sleep=RecordingSleep()
+    )
     await sink.start(timer=False)
 
     await sink.write(_ne("a"))
@@ -258,7 +264,9 @@ async def test_shutdown_spools_undelivered_rows_and_start_reloads_them(tmp_path:
     down = FakeClickHouse()
     down.insert_default = 503
     sink = ClickHouseSink(
-        _settings(tmp_path, batch_rows=100, max_retries=1), client=down.client(), sleep=RecordingSleep()
+        _settings(tmp_path, batch_rows=100, max_retries=1),
+        client=down.client(),
+        sleep=RecordingSleep(),
     )
     await sink.start(timer=False)
     for i in range(3):
@@ -332,6 +340,7 @@ async def test_integration_at_least_once_duplicates_collapse(tmp_path: Path) -> 
         await sink.close()
 
     async with httpx.AsyncClient() as client:
+
         async def scalar(sql: str) -> int:
             resp = await client.post(url, params={"query": sql})
             resp.raise_for_status()

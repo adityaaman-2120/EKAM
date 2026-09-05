@@ -61,24 +61,56 @@ async def test_parse_stage_cisco_asa_syslog_envelope_fields(tmp_path: Path) -> N
     assert out.raw == _ASA_LINE  # raw bytes untouched
 
 
-async def test_parse_error_is_dead_lettered_with_stage_parse(tmp_path: Path) -> None:
+async def test_csv_line_is_never_a_sniff_failure(tmp_path: Path) -> None:
+    """csv/tsv are never engine-dispatched by the sniff-based pass at all (see
+
+    ulpf.parse.coordinator._NO_ENGINE_FORMATS), so a line that sniffs as csv
+    -- like PAN-OS TRAFFIC -- is never even a "deferred parse failure" here:
+    it is simply unclassified, exactly like a line that sniffs as unknown, and
+    is never dead-lettered at this stage.
+    """
     settings = _settings(tmp_path)
-    # 8+ commas -> sniffs as csv; no engine options -> csv engine raises -> ParseError
     stage = ParseStage(settings, ParseCoordinator(engine_options={}))
     raw = _raw(b"a,b,c,d,e,f,g,h,i")
 
     out = await stage.process(raw)
-    assert out is None  # dropped from the pipeline, worker continues
 
-    recent = list(DeadLetterQueue(settings).iter_recent(1))
-    assert len(recent) == 1
-    assert recent[0].stage == "parse"
-    assert recent[0].raw == raw.raw
-    assert recent[0].detail["format"] == "csv"
+    assert isinstance(out, ParsedEvent)
+    assert out.format == "csv"
+    assert out.source_type is None
+    assert out.fields == {}
+    assert out.needs_template_mining is True
+    assert out.raw == raw.raw
+
+    assert DeadLetterQueue(settings).stats()["total"] == 0
+
+
+async def test_sniff_parse_error_is_deferred_not_dead_lettered(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    # cef IS engine-dispatched (self-describing, config-free); this header is
+    # short a field, so the engine genuinely raises -> a real ParseError.
+    stage = ParseStage(settings, ParseCoordinator())
+    raw = _raw(b"CEF:0|Vendor|Product|1.0|100|deny")
+
+    out = await stage.process(raw)
+
+    # ParseStage's sniff-based pass is advisory only: a ParseError here just
+    # means the sniffer's guessed engine/options couldn't read the line, not
+    # that the event is bad. It is never dropped or dead-lettered at this
+    # stage -- it is passed on like an unknown line, and NormalizeStage will
+    # attempt the authoritative re-parse once (if) a source definition matches.
+    assert isinstance(out, ParsedEvent)
+    assert out.format == "unknown"
+    assert out.source_type is None
+    assert out.fields == {}
+    assert out.needs_template_mining is True
+    assert out.raw == raw.raw
+
+    assert DeadLetterQueue(settings).stats()["total"] == 0
 
 
 async def test_parse_success_rate_and_events_parsed_metrics(tmp_path: Path) -> None:
-    stage = ParseStage(_settings(tmp_path), ParseCoordinator(engine_options={}))
+    stage = ParseStage(_settings(tmp_path), ParseCoordinator())
     parsed_key = 'ulpf_events_parsed_total{source_type="unknown"}'
     before_parsed = snapshot().get(parsed_key, 0.0)
 
@@ -87,7 +119,9 @@ async def test_parse_success_rate_and_events_parsed_metrics(tmp_path: Path) -> N
     assert snapshot()["ulpf_parse_success_rate"] == 1.0
     assert snapshot()[parsed_key] - before_parsed == 3.0
 
-    await stage.process(_raw(b"a,b,c,d,e,f,g,h,i"))  # one failure
+    # a genuine engine failure (not "needs config it doesn't have") -- see
+    # test_sniff_parse_error_is_deferred_not_dead_lettered above
+    await stage.process(_raw(b"CEF:0|Vendor|Product|1.0|100|deny"))  # one failure
     assert snapshot()["ulpf_parse_success_rate"] == 0.75  # 3 / 4
     assert snapshot()[parsed_key] - before_parsed == 3.0  # unchanged on failure
 

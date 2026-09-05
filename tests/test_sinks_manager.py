@@ -5,9 +5,6 @@ from __future__ import annotations
 import asyncio
 import time
 from pathlib import Path
-from typing import Any
-
-import pytest
 
 from ulpf.config.settings import Settings, StorageSettings
 from ulpf.core.metrics import snapshot
@@ -57,7 +54,9 @@ class FakeAsyncSink:
 def _settings(tmp_path: Path) -> Settings:
     return Settings(
         storage=StorageSettings(
-            silver_path=tmp_path / "silver", dlq_path=tmp_path / "dlq", state_path=tmp_path / "state"
+            silver_path=tmp_path / "silver",
+            dlq_path=tmp_path / "dlq",
+            state_path=tmp_path / "state",
         )
     )
 
@@ -127,15 +126,21 @@ async def test_all_sinks_succeeding_returns_the_event_untouched(tmp_path: Path) 
     assert DeadLetterQueue(_settings(tmp_path)).stats()["total"] == 0
 
     after = snapshot()
-    assert after.get('ulpf_sink_writes_total{sink="required",status="ok"}', 0) - before.get(
-        'ulpf_sink_writes_total{sink="required",status="ok"}', 0
-    ) == 1.0
-    assert after.get('ulpf_sink_writes_total{sink="optional",status="ok"}', 0) - before.get(
-        'ulpf_sink_writes_total{sink="optional",status="ok"}', 0
-    ) == 1.0
-    assert after['ulpf_sink_latency_seconds_count{sink="required"}'] - before.get(
-        'ulpf_sink_latency_seconds_count{sink="required"}', 0
-    ) == 1.0
+    assert (
+        after.get('ulpf_sink_writes_total{sink="required",status="ok"}', 0)
+        - before.get('ulpf_sink_writes_total{sink="required",status="ok"}', 0)
+        == 1.0
+    )
+    assert (
+        after.get('ulpf_sink_writes_total{sink="optional",status="ok"}', 0)
+        - before.get('ulpf_sink_writes_total{sink="optional",status="ok"}', 0)
+        == 1.0
+    )
+    assert (
+        after['ulpf_sink_latency_seconds_count{sink="required"}']
+        - before.get('ulpf_sink_latency_seconds_count{sink="required"}', 0)
+        == 1.0
+    )
 
 
 async def test_no_registered_sinks_is_a_passthrough(tmp_path: Path) -> None:
@@ -203,7 +208,10 @@ async def test_one_sinks_failure_does_not_prevent_the_others_from_writing(tmp_pa
     healthy_required = FakeAsyncSink()
     healthy_optional = FakeAsyncSink()
     manager = _manager(
-        tmp_path, broken=(broken, False), req=(healthy_required, True), opt=(healthy_optional, False)
+        tmp_path,
+        broken=(broken, False),
+        req=(healthy_required, True),
+        opt=(healthy_optional, False),
     )
     event = _ne()
 

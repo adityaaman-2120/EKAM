@@ -139,7 +139,9 @@ class SinkManager:
         self._handles: list[SinkHandle] = []
 
     @classmethod
-    def from_settings(cls, settings: Settings, *, dlq: DeadLetterQueue | None = None) -> SinkManager:
+    def from_settings(
+        cls, settings: Settings, *, dlq: DeadLetterQueue | None = None
+    ) -> SinkManager:
         """Build the default sink set: Parquet required, the network sinks optional.
 
         The network sinks are always registered (cheaply — no I/O happens until
@@ -205,7 +207,9 @@ class SinkManager:
         if not self._handles:
             return event
 
-        results = await asyncio.gather(*(self._write_one(handle, event) for handle in self._handles))
+        results = await asyncio.gather(
+            *(self._write_one(handle, event) for handle in self._handles)
+        )
         for result in results:
             self._record(result, event)
 
@@ -232,7 +236,9 @@ class SinkManager:
             _log.log(
                 logging.ERROR if result.required else logging.WARNING,
                 "sink %r failed to write event %s: %s",
-                result.name, event.event_uid, result.error,
+                result.name,
+                event.event_uid,
+                result.error,
             )
 
     def _dead_letter(self, event: NormalizedEvent, failed: list[SinkResult]) -> None:
@@ -249,7 +255,8 @@ class SinkManager:
         )
         _log.error(
             "event %s dead-lettered: required sink(s) failed: %s",
-            event.event_uid, [result.name for result in failed],
+            event.event_uid,
+            [result.name for result in failed],
         )
 
 

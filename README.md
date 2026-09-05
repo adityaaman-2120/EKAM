@@ -8,7 +8,9 @@ cryptographic hash, parse it, normalize it into the OCSF schema, and make it
 queryable and ML-ready — deployable in an air-gapped container.
 
 See [CLAUDE.md](CLAUDE.md) for full project context, requirements, tech stack,
-and engineering rules.
+and engineering rules, and [docs/architecture.md](docs/architecture.md) for
+storage tiers, partition key semantics (bronze = ingest date, silver = event
+date), and the small-file / compaction story.
 
 ## Prerequisites
 
@@ -27,6 +29,21 @@ pre-commit install     # one-time: runs `ruff format` + `ruff check --fix` on ev
 CI enforces the same: a `ruff format --check .` step runs **before** lint and
 fails the build on any drift. `make format` fixes it locally; `make
 format-check` verifies without writing.
+
+**Run this before every commit and at the end of every phase:**
+
+```bash
+make check          # ruff format . && ruff check . --fix && ruff check . && pytest -q
+```
+```powershell
+.\scripts\win\check.ps1   # same four steps, for Windows machines without `make`
+```
+
+Either stops at the first failing step. `scripts\win\check.ps1` calls the
+tools from `.venv` explicitly rather than trusting a bare `ruff`/`pytest` on
+PATH — a different toolchain's `ruff` (e.g. Anaconda's) shadowing the
+project's pinned version is a real way for formatting/lint behaviour to
+silently drift between machines.
 
 ## Target schema
 
